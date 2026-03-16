@@ -1,0 +1,22 @@
+# 相机标定配置文件
+
+camera_calibration_node:
+  ros__parameters:
+    # ROS2图像话题
+    image_topic: '/image_raw'
+    
+    # 棋盘格参数 (内角点数量，不是方格数！)
+    # 如果你的棋盘格是12列×7行的方格，内角点就是11×6
+    chessboard_width: 11   # 内角点列数 = 方格列数 - 1
+    chessboard_height: 6   # 内角点行数 = 方格行数 - 1
+    
+    # 每个棋盘格的实际尺寸 (单位: mm)
+    square_size: 10.0
+    
+    # 最少需要采集的图片数量
+    min_images: 15
+    
+    # 畸变模型选择
+    # false: 使用标准模型 (k1, k2, p1, p2) - 推荐，避免过拟合
+    # true:  使用有理模型 (k1, k2, p1, p2, k3) - 高畸变镜头使用
+    use_rational_model: false

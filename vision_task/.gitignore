@@ -1,0 +1,13 @@
+*.elf
+.pio/
+.vscode/
+build/
+install/
+log/
+init-git.sh
+update-git.sh
+*.bin
+*.png
+*.map
+*.pyc
+__pycache__/

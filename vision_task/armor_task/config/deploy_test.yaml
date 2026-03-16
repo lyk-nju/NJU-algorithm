@@ -1,0 +1,7 @@
+send_port: /dev/ttyACM1
+receive_port: /dev/ttyACM1
+
+yolo_model_path: /home/user/NJU_RMVision/armor_task/models/best.onnx
+video_path : /home/user/NJU_RMVision/armor_task/assets/circular.avi
+config_path : /home/user/NJU_RMVision/armor_task/config/camera1.yaml
+bullet_speed : 17.5

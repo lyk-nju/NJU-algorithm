@@ -1,0 +1,186 @@
+{
+  "data": [
+    {
+      "id": 0,
+      "name": "return_to_1_heal",
+      "wayPointID": [
+        -1
+      ],
+      "weight": 1500,
+      "start_time": -1,
+      "end_time": -1,
+      "robot_mode": -1,
+      "minHP": -1,
+      "maxHP": 100,
+      "decide_mode": 6,
+      "decide_wayPoint": 1,
+      "out_post_HP_min": -1,
+      "base_HP_min": -1,
+      "if_succession": true,
+      "if_reverse": false,
+      "enemyPosition": [
+        [
+          -1
+        ],
+        [
+          -1
+        ],
+        [
+          -1
+        ],
+        [
+          -1
+        ],
+        [
+          -1
+        ],
+        [
+          -1
+        ]
+      ],
+      "friendPosition": [
+        [
+          -1
+        ],
+        [
+          -1
+        ],
+        [
+          -1
+        ],
+        [
+          -1
+        ],
+        [
+          -1
+        ],
+        [
+          -1
+        ]
+      ]
+    },
+    {
+      "id": 1,
+      "name": "attack_at_center",
+      "wayPointID": [
+        5
+      ],
+      "weight": 1200,
+      "start_time": -1,
+      "end_time": -1,
+      "robot_mode": -1,
+      "minHP": -1,
+      "maxHP": -1,
+      "decide_mode": 8,
+      "decide_wayPoint": 5,
+      "out_post_HP_min": -1,
+      "base_HP_min": -1,
+      "if_succession": false,
+      "if_reverse": false,
+      "enemyPosition": [
+        [
+          -1
+        ],
+        [
+          -1
+        ],
+        [
+          -1
+        ],
+        [
+          -1
+        ],
+        [
+          -1
+        ],
+        [
+          -1
+        ]
+      ],
+      "friendPosition": [
+        [
+          -1
+        ],
+        [
+          -1
+        ],
+        [
+          -1
+        ],
+        [
+          -1
+        ],
+        [
+          -1
+        ],
+        [
+          -1
+        ]
+      ]
+    },
+    {
+      "id": 2,
+      "name": "occupy_5",
+      "wayPointID": [
+        1,
+        2,
+        3,
+        4,
+        6,
+        7
+      ],
+      "weight": 800,
+      "start_time": -1,
+      "end_time": -1,
+      "robot_mode": -1,
+      "minHP": -1,
+      "maxHP": -1,
+      "decide_mode": 6,
+      "decide_wayPoint": 5,
+      "out_post_HP_min": -1,
+      "base_HP_min": -1,
+      "if_succession": true,
+      "if_reverse": false,
+      "enemyPosition": [
+        [
+          -1
+        ],
+        [
+          -1
+        ],
+        [
+          -1
+        ],
+        [
+          -1
+        ],
+        [
+          -1
+        ],
+        [
+          -1
+        ]
+      ],
+      "friendPosition": [
+        [
+          -1
+        ],
+        [
+          -1
+        ],
+        [
+          -1
+        ],
+        [
+          -1
+        ],
+        [
+          -1
+        ],
+        [
+          -1
+        ]
+      ]
+    }
+  ]
+}

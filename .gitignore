@@ -1,0 +1,19 @@
+# 忽略所有名为 build, install, log 的文件夹
+build/
+install/
+log/
+
+# 忽略 Python 编译缓存
+__pycache__/
+*.pyc
+
+# 忽略 IDE 配置文件
+.vscode/
+.idea/
+
+# 忽略本地日志或临时文件
+*.log
+*.swp
+
+# 忽略 MacOS 特有的文件
+.DS_Store

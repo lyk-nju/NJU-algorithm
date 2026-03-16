@@ -1,0 +1,13 @@
+{
+  "config": {
+    "WayPointsPATH": "waypoints_test.json",
+    "DecisionsPATH": "decisions_test.json",
+    "MAP_PATH": "RMUL.png",
+    "REAL_WIDTH": 12.0,
+    "REAL_HEIGHT": 8.0,
+    "INIT_DISTANCE_THR": 1.0,
+    "INIT_SEEK_THR": 5.0,
+    "STEP_DISTANCE": 0.1,
+    "CAR_SEEK_FOV": 70.0
+  }
+}

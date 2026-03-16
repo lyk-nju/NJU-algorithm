@@ -1,0 +1,6 @@
+# Python依赖包
+opencv-python>=4.5.0
+numpy>=1.19.0
+
+# ROS2依赖通过系统包管理器安装:
+# sudo apt install ros-${ROS_DISTRO}-cv-bridge

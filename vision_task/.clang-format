@@ -1,0 +1,18 @@
+BasedOnStyle: LLVM
+IndentWidth: 4
+TabWidth: 4
+UseTab: Never
+BreakBeforeBraces: Allman
+AllowShortAssignmentsOnASingleLine: Always
+AllowShortCaseLabelsOnASingleLine: true
+AllowShortIfStatementsOnASingleLine: Always
+AllowShortLoopsOnASingleLine: true
+PenaltyBreakAssignment: 1000  # 非常高，避免断行
+PenaltyBreakBeforeFirstCallParameter: 1000
+BinPackArguments: false
+BinPackParameters: false
+ColumnLimit: 220  # 设置更高的列限制，避免过早换行
+
+# 可选：确保参数或表达式不会被拆行
+BreakBeforeBinaryOperators: None
+BreakConstructorInitializers: AfterColon

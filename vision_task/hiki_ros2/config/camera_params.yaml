@@ -1,0 +1,7 @@
+/hik_camera:
+  ros__parameters:
+    camera_name: narrow_stereo
+
+    exposure_time: 10000
+    gain: 16.9
+    balance_white_auto: 0  # 0=Off(关闭), 1=Continuous(连续), 2=Once(一次)
