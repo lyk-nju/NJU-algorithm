@@ -4,10 +4,12 @@
 #include "pharser.hpp"
 #include <Eigen/Dense>
 #include <iomanip>
+#include <mutex>
 #include <opencv2/core/eigen.hpp>
 #include <opencv2/opencv.hpp>
 #include <sstream>
 #include <string>
+#include <unordered_map>
 #include <vector>
 #include <yaml-cpp/yaml.h>
 
@@ -171,6 +173,13 @@ void plotSingleArmor(const Armor &target, const Armor &armor, cv::Mat &img)
 // ============================================================================
 namespace
 {
+struct TransformCacheEntry
+{
+    Eigen::Matrix3d R_camera2gimbal;
+    Eigen::Vector3d t_camera2gimbal;
+    Eigen::Matrix3d R_gimbal2world;
+};
+
 // 重力加速度
 constexpr double kGravity = 9.7833;
 
@@ -291,6 +300,21 @@ std::vector<Eigen::Vector3d> calculateTrajectoryPointsFromAngles(const Eigen::Ve
 // 从 YAML 中加载相机到云台、云台到世界的变换矩阵
 void loadTransformMatrices(const std::string &config_path, Eigen::Matrix3d &R_camera2gimbal, Eigen::Vector3d &t_camera2gimbal, Eigen::Matrix3d &R_gimbal2world)
 {
+    static std::mutex cache_mutex;
+    static std::unordered_map<std::string, TransformCacheEntry> transform_cache;
+
+    {
+        std::lock_guard<std::mutex> lock(cache_mutex);
+        auto it = transform_cache.find(config_path);
+        if (it != transform_cache.end())
+        {
+            R_camera2gimbal = it->second.R_camera2gimbal;
+            t_camera2gimbal = it->second.t_camera2gimbal;
+            R_gimbal2world = it->second.R_gimbal2world;
+            return;
+        }
+    }
+
     YAML::Node yaml = YAML::LoadFile(config_path);
 
     auto R_camera2gimbal_data = yaml["R_camera2gimbal"].as<std::vector<double>>();
@@ -301,6 +325,11 @@ void loadTransformMatrices(const std::string &config_path, Eigen::Matrix3d &R_ca
 
     // 当前测试环境下没有 IMU，先假设云台坐标系与世界坐标系重合
     R_gimbal2world = Eigen::Matrix3d::Identity();
+
+    {
+        std::lock_guard<std::mutex> lock(cache_mutex);
+        transform_cache[config_path] = {R_camera2gimbal, t_camera2gimbal, R_gimbal2world};
+    }
 }
 
 // 将世界坐标系下的 3D 点投影到图像平面
@@ -590,9 +619,7 @@ void drawArmorDetection(cv::Mat &img, const ArmorArray &armors)
 // 绘制Target详细信息
 void drawTargetInfo(cv::Mat &img, const std::vector<Target> &targets, const std::string &tracker_state, const PnpSolver &pnp_solver)
 {
-    // 从camera1.yaml中加载相机参数
-    auto camera_params = loadCameraParameters("../config/camera1.yaml");
-    cv::Mat camera_matrix = camera_params.first;
+    const cv::Mat &camera_matrix = pnp_solver.camera_matrix();
 
     // 显示追踪器状态
     tools::draw_text(img, "Tracker State: " + tracker_state, cv::Point(10, 30), cv::Scalar(0, 255, 0), 0.7, 2);
@@ -657,7 +684,6 @@ void drawTargetInfo(cv::Mat &img, const std::vector<Target> &targets, const std:
             }
             else
             {
-                std::cout << "[Draw] EKF center pixel out of bounds!" << std::endl;
             }
         }
     } // 是否切换标志

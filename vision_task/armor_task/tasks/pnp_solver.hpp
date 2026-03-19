@@ -49,8 +49,11 @@ class PnpSolver
     double armor_reprojection_error(const Armor &armor, double yaw, const double &inclined) const;
 
     std::vector<cv::Point2f> reproject_armor(const Eigen::Vector3d &p_world, double yaw, int car_num, bool islarge) const;
-
+    std::vector<cv::Point2f> fast_project_armor(const Eigen::Vector3d& p_world, double yaw, bool islarge) const;
     double SJTU_cost(const std::vector<cv::Point2f> &cv_refs, const std::vector<cv::Point2f> &cv_pts, const double &inclined) const;
+
+    const cv::Mat &camera_matrix() const { return camera_matrix_; }
+    const cv::Mat &distort_coeffs() const { return distort_coeffs_; }
 
   private:
     cv::Mat camera_matrix_;                 // 相机内参矩阵

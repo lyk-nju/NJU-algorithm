@@ -1,80 +1,112 @@
 #include "../include/armor.hpp"
 #include "../tools/draw.hpp"
 #include "../tools/pharser.hpp"
-#include "../tools/visualizer.hpp"
 #include "aimer.hpp"
 #include "detector.hpp"
 #include "pnp_solver.hpp"
 #include "tracker.hpp"
+#include <atomic>
 #include <Eigen/Dense>
 #include <chrono>
-#include <cstdlib>
-#include <ctime>
+#include <condition_variable>
 #include <iomanip>
 #include <iostream>
 #include <list>
-#include <opencv2/core/eigen.hpp>
+#include <memory>
+#include <mutex>
 #include <opencv2/opencv.hpp>
 #include <optional>
-#include <rclcpp/rclcpp.hpp>
-#include <set>
 #include <sstream>
 #include <thread>
-#include <yaml-cpp/yaml.h>
 
 using namespace armor_task;
 
+namespace
+{
+enum class DrawMode
+{
+    Off,
+    Lite,
+    Full,
+};
+
+struct StageStats
+{
+    double fps = 0.0;
+    double detect_ms = 0.0;
+    double track_ms = 0.0;
+    double aim_ms = 0.0;
+    double draw_ms = 0.0;
+    double total_ms = 0.0;
+};
+
+struct VideoFramePacket
+{
+    cv::Mat frame;
+    int frame_index = 0;
+    bool eof = false;
+};
+
+DrawMode next_draw_mode(DrawMode mode)
+{
+    if (mode == DrawMode::Off) return DrawMode::Lite;
+    if (mode == DrawMode::Lite) return DrawMode::Full;
+    return DrawMode::Off;
+}
+
+const char *draw_mode_name(DrawMode mode)
+{
+    if (mode == DrawMode::Off) return "OFF";
+    if (mode == DrawMode::Lite) return "LITE";
+    return "FULL";
+}
+
+void draw_stage_stats(cv::Mat &img, const StageStats &stats, DrawMode mode, int frame_index)
+{
+    int y = 25;
+    auto put = [&](const std::string &text, const cv::Scalar &color, double scale = 0.55, int thickness = 1)
+    {
+        cv::putText(img, text, cv::Point(10, y), cv::FONT_HERSHEY_SIMPLEX, scale, color, thickness);
+        y += 22;
+    };
+
+    std::ostringstream fps_ss;
+    fps_ss << std::fixed << std::setprecision(1) << "FPS: " << stats.fps << "  Draw: " << draw_mode_name(mode);
+    put(fps_ss.str(), cv::Scalar(0, 255, 0), 0.6, 2);
+
+    std::ostringstream stage_ss;
+    stage_ss << std::fixed << std::setprecision(2) << "detect " << stats.detect_ms << "  track " << stats.track_ms << "  aim " << stats.aim_ms;
+    put(stage_ss.str(), cv::Scalar(255, 255, 255));
+
+    std::ostringstream total_ss;
+    total_ss << std::fixed << std::setprecision(2) << "draw " << stats.draw_ms << "  total " << stats.total_ms << "  frame " << frame_index;
+    put(total_ss.str(), cv::Scalar(255, 255, 255));
+}
+} // namespace
+
 int main(int argc, char *argv[])
 {
-    // 初始化 ROS2（用于3D可视化）
-    rclcpp::init(argc, argv);
-    auto ros_node = std::make_shared<rclcpp::Node>("video_test_node");
-    std::thread spin_thread([&]() { rclcpp::spin(ros_node); });
-
     try
     {
-        // 从配置文件加载配置
         std::string test_config_path = "../config/video_test.yaml";
-        if (argc > 1) test_config_path = argv[1]; // 允许通过命令行参数指定配置文件路径
+        if (argc > 1) test_config_path = argv[1];
 
-        TestConfig test_config = load_video_test_config(test_config_path);
+        const TestConfig test_config = load_video_test_config(test_config_path);
+        const std::string model_path = test_config.yolo_model_path;
+        const std::string config_path = test_config.config_path;
+        const std::string input_video_path = test_config.video_path;
+        const double bullet_speed = test_config.bullet_speed;
 
-        // 允许命令行参数覆盖配置文件中的值
-        std::string model_path = test_config.yolo_model_path;
-        std::string config_path = test_config.config_path;
-        std::string input_video_path = test_config.video_path;
-        double bullet_speed = test_config.bullet_speed;
-
-        std::cout << "Video source : " << input_video_path << std::endl;
-        std::cout << "YOLO model   : " << model_path << std::endl;
-        std::cout << "Config path  : " << config_path << std::endl;
-        std::cout << "Bullet speed : " << bullet_speed << " m/s" << std::endl;
-
-        // 加载相机参数
         auto camera_params = loadCameraParameters(config_path);
-        cv::Mat camera_matrix = camera_params.first;
-        cv::Mat distort_coeffs = camera_params.second;
-        std::cout << "Camera parameters loaded from config" << std::endl;
+        const cv::Mat &camera_matrix = camera_params.first;
+        const cv::Mat &distort_coeffs = camera_params.second;
 
-        // 实例化功能组件
-        std::cout << "Initializing components..." << std::endl;
         Detector detector(model_path);
         PnpSolver pnp_solver(config_path);
-
-        // 在视频测试中，设置固定的云台姿态（单位四元数，表示云台坐标系 = 世界坐标系）
-        // 模拟每次更新 R_gimbal2world_，但使用固定值
-        Eigen::Quaterniond fixed_quat(1.0, 0.0, 0.0, 0.0); // 单位四元数 (w, x, y, z)
-        pnp_solver.set_R_gimbal2world(fixed_quat);
-        std::cout << "Initialized R_gimbal2world with identity quaternion (gimbal = world)" << std::endl;
-
+        pnp_solver.set_R_gimbal2world(Eigen::Quaterniond(1.0, 0.0, 0.0, 0.0));
         Tracker tracker(config_path, pnp_solver);
         Aimer aimer(config_path);
 
-        // 初始化3D可视化器
-        Visualizer3D visualizer(ros_node, "world");
-        std::cout << "3D Visualizer initialized. Start RViz2 to view markers." << std::endl;
-
-        // 打开视频
         cv::VideoCapture cap(input_video_path);
         if (!cap.isOpened())
         {
@@ -82,356 +114,182 @@ int main(int argc, char *argv[])
             return -1;
         }
 
-        // 获取视频信息
-        int frame_width = static_cast<int>(cap.get(cv::CAP_PROP_FRAME_WIDTH));
-        int frame_height = static_cast<int>(cap.get(cv::CAP_PROP_FRAME_HEIGHT));
-        double video_fps = cap.get(cv::CAP_PROP_FPS);
-        int total_frames = static_cast<int>(cap.get(cv::CAP_PROP_FRAME_COUNT));
+        std::cout << "Video source : " << input_video_path << std::endl;
+        std::cout << "YOLO model   : " << model_path << std::endl;
+        std::cout << "Config path  : " << config_path << std::endl;
+        std::cout << "Bullet speed : " << bullet_speed << " m/s" << std::endl;
+        std::cout << "Controls     : q quit, v draw mode" << std::endl;
 
-        std::cout << "Video Info:" << std::endl;
-        std::cout << "  Resolution: " << frame_width << "x" << frame_height << std::endl;
-        std::cout << "  FPS: " << video_fps << std::endl;
-        std::cout << "  Total Frames: " << total_frames << std::endl;
+        std::atomic<bool> running{true};
+        std::mutex frame_mutex;
+        std::condition_variable frame_cv;
+        std::shared_ptr<VideoFramePacket> latest_packet;
+        int reader_frame_index = 0;
+        uint64_t latest_packet_id = 0;
+        uint64_t consumed_packet_id = 0;
+        bool reader_done = false;
 
-        cv::Mat frame;
+        std::thread reader_thread([&]() {
+            while (running)
+            {
+                cv::Mat frame;
+                if (!cap.read(frame))
+                {
+                    auto packet = std::make_shared<VideoFramePacket>();
+                    packet->eof = true;
+                    {
+                        std::lock_guard<std::mutex> lock(frame_mutex);
+                        latest_packet = packet;
+                        latest_packet_id = static_cast<uint64_t>(++reader_frame_index);
+                        reader_done = true;
+                    }
+                    frame_cv.notify_all();
+                    running = false;
+                    break;
+                }
+
+                auto packet = std::make_shared<VideoFramePacket>();
+                packet->frame = std::move(frame);
+                packet->frame_index = ++reader_frame_index;
+                {
+                    std::lock_guard<std::mutex> lock(frame_mutex);
+                    latest_packet = packet;
+                    latest_packet_id = static_cast<uint64_t>(packet->frame_index);
+                }
+                frame_cv.notify_one();
+            }
+
+            {
+                std::lock_guard<std::mutex> lock(frame_mutex);
+                reader_done = true;
+            }
+            frame_cv.notify_all();
+        });
+
+        DrawMode draw_mode = DrawMode::Full;
         int frame_count = 0;
+        int fps_frame_count = 0;
         auto start_time = std::chrono::steady_clock::now();
         auto last_fps_time = start_time;
         double fps = 0.0;
 
-        // 10fps播放控制
-        constexpr double target_fps = 10.0;
-        constexpr double target_frame_time_ms = 1000.0 / target_fps; //
-
-        std::cout << "Starting processing..." << std::endl;
-        std::cout << "Press 'q' to quit, 'p' to pause/resume, SPACE to step frame" << std::endl;
-        std::cout << "Target playback speed: " << target_fps << " fps" << std::endl;
-
-        // 随机选择30帧进行temp_lost测试
-        std::set<int> temp_lost_frames;
-        std::srand(std::time(nullptr));
-        while (temp_lost_frames.size() < 70)
+        while (running)
         {
-            int random_frame = std::rand() % total_frames + 1;
-            temp_lost_frames.insert(random_frame);
-        }
-        std::cout << "\n=== TEMP_LOST TEST ===" << std::endl;
-        std::cout << "Will simulate temp_lost on 30 random frames: ";
-        for (int f : temp_lost_frames)
-        {
-            std::cout << f << " ";
-        }
-        std::cout << "\n========================\n" << std::endl;
-
-        bool paused = false;
-        std::optional<io::Command> latest_autoaim_cmd;
-        AimPoint latest_aim_point{};
-        double latest_autoaim_time_ms = 0.0;
-
-        while (true)
-        {
-            auto frame_start = std::chrono::steady_clock::now();
-            double frame_start_s = std::chrono::duration<double>(frame_start.time_since_epoch()).count();
-            std::cout << "frame_start: " << frame_start_s << " s" << std::endl;
-
-            if (!paused)
+            std::shared_ptr<VideoFramePacket> packet;
             {
-                if (!cap.read(frame))
+                std::unique_lock<std::mutex> lock(frame_mutex);
+                frame_cv.wait(lock, [&]() { return latest_packet_id != consumed_packet_id || reader_done || !running; });
+                if (!running || (latest_packet_id == consumed_packet_id && reader_done))
                 {
-                    std::cout << "End of video or failed to read frame" << std::endl;
                     break;
                 }
-                frame_count++;
+                packet = latest_packet;
+                consumed_packet_id = latest_packet_id;
             }
 
-            if (frame.empty()) continue;
+            if (!packet) continue;
+            if (packet->eof) break;
 
-            cv::Mat display_frame = frame.clone();
+            cv::Mat &display_frame = packet->frame;
+            const auto frame_time = std::chrono::steady_clock::now();
+            const auto total_begin = frame_time;
+            frame_count++;
+            fps_frame_count++;
 
-            if (!paused)
+            StageStats stats;
+            stats.fps = fps;
+            ArmorArray detected_armors;
+            std::vector<Target> targets;
+            std::optional<io::Command> latest_autoaim_cmd;
+            AimPoint latest_aim_point{};
+
+            auto detect_begin = std::chrono::steady_clock::now();
+            detected_armors = detector.detect(display_frame);
+            auto detect_end = std::chrono::steady_clock::now();
+            stats.detect_ms = std::chrono::duration<double, std::milli>(detect_end - detect_begin).count();
+
+            pnp_solver.set_R_gimbal2world(Eigen::Quaterniond(1.0, 0.0, 0.0, 0.0));
+            auto track_begin = std::chrono::steady_clock::now();
+            targets = tracker.track(detected_armors, frame_time);
+            auto track_end = std::chrono::steady_clock::now();
+            stats.track_ms = std::chrono::duration<double, std::milli>(track_end - track_begin).count();
+
+            if (!targets.empty())
             {
-                // 检测阶段
-                std::cout << "Processing frame " << frame_count << "/" << total_frames << std::endl;
-                auto detect_start = std::chrono::steady_clock::now();
-                ArmorArray detected_armors = detector.detect(frame);
-                auto detect_end = std::chrono::steady_clock::now();
-                double detect_time = std::chrono::duration<double, std::milli>(detect_end - detect_start).count();
+                auto aim_begin = std::chrono::steady_clock::now();
+                std::list<Target> target_list(targets.begin(), targets.end());
+                latest_autoaim_cmd = aimer.aim(target_list, frame_time, bullet_speed);
+                latest_aim_point = aimer.debug_aim_point;
+                stats.aim_ms = std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - aim_begin).count();
+            }
 
-                // 模拟temp_lost: 如果当前帧在随机选择的帧中,清空检测结果
-                bool is_temp_lost_frame = temp_lost_frames.find(frame_count) != temp_lost_frames.end();
-                if (is_temp_lost_frame)
+            auto draw_begin = std::chrono::steady_clock::now();
+            if (draw_mode != DrawMode::Off)
+            {
+                drawArmorDetection(display_frame, detected_armors);
+                if (draw_mode == DrawMode::Full)
                 {
-                    std::cout << "\n*** [TEMP_LOST SIMULATION] Frame " << frame_count << " - Clearing detections ***\n" << std::endl;
-                    detected_armors.clear();
-                }
-
-                // 模拟更新云台到世界坐标系的旋转矩阵（视频测试中使用固定值）
-                // 在视频测试中，相机坐标系 = 世界坐标系，所以使用单位四元数
-                pnp_solver.set_R_gimbal2world(fixed_quat);
-
-                // 追踪阶段（内部会进行 PnP 解算）
-                auto track_start = std::chrono::steady_clock::now();
-                auto targets = tracker.track(detected_armors, frame_start);
-                std::cout << "targets.size(): " << targets.size() << std::endl;
-
-                // 调试输出：追踪后的装甲板信息（已经过 PnP 解算）
-                if (!detected_armors.empty())
-                {
-                    std::cout << "\n=== PnP Results (after tracking) | Frame " << frame_count << " ===" << std::endl;
-                    for (size_t i = 0; i < detected_armors.size(); ++i)
+                    drawTargetInfo(display_frame, targets, tracker.state(), pnp_solver);
+                    if (latest_aim_point.valid)
                     {
-                        const auto &armor = detected_armors[i];
-                        if (armor.p_camera.norm() > 0) // 只显示解算成功的装甲板
-                        {
-                            std::cout << " | Armor " << i << "] ID:" << armor.car_num << " | p_world: (" << armor.p_world.x() << ", " << armor.p_world.y() << ", " << armor.p_world.z() << ")"
-                                      << " | yaw: " << armor.ypr_in_world(0) * 180 / CV_PI << "°" << std::endl;
-                        }
+                        drawTrajectory(display_frame, latest_aim_point, bullet_speed, config_path, camera_matrix, distort_coeffs, pnp_solver.R_gimbal2world_);
                     }
-                    std::cout << "====================================\n" << std::endl;
                 }
-                // for (const auto &target : targets)
-                // {
-                //     Eigen::VectorXd ekf_x = target.ekf_x();
-                //     if (ekf_x.size() >= 5)
-                //     {
-                //         std::cout << "target car_num: " << target.car_num << ", pos: (" << ekf_x[0] << ", " << ekf_x[2] << ", " << ekf_x[4] << ")" << std::endl;
-                //     }
-                // }
-                auto track_end = std::chrono::steady_clock::now();
-                double track_time = std::chrono::duration<double, std::milli>(track_end - track_start).count();
+            }
 
-                if (!targets.empty())
+            const auto now = std::chrono::steady_clock::now();
+            const double fps_elapsed = std::chrono::duration<double>(now - last_fps_time).count();
+            if (fps_elapsed >= 0.5)
+            {
+                fps = fps_frame_count / fps_elapsed;
+                fps_frame_count = 0;
+                last_fps_time = now;
+            }
+            stats.fps = fps;
+            stats.draw_ms = std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - draw_begin).count();
+            stats.total_ms = std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - total_begin).count();
+
+            if (draw_mode != DrawMode::Off)
+            {
+                draw_stage_stats(display_frame, stats, draw_mode, packet->frame_index);
+
+                if (latest_autoaim_cmd)
                 {
-                    std::list<Target> target_list(targets.begin(), targets.end());
-                    auto aim_start = std::chrono::steady_clock::now();
-                    io::Command auto_cmd = aimer.aim(target_list, frame_start, bullet_speed);
-                    auto aim_end = std::chrono::steady_clock::now();
-                    latest_autoaim_time_ms = std::chrono::duration<double, std::milli>(aim_end - aim_start).count();
-                    latest_autoaim_cmd = auto_cmd;
-                    latest_aim_point = aimer.debug_aim_point;
-
-                    if (frame_count % 30 == 0)
-                    {
-                        double yaw_deg = auto_cmd.yaw * 180.0 / CV_PI;
-                        double pitch_deg = auto_cmd.pitch * 180.0 / CV_PI;
-                        // std::ostringstream aim_log;
-                        // aim_log << std::boolalpha << "[AutoAim] valid=" << auto_cmd.valid << " shoot=" << auto_cmd.shoot;
-                        // aim_log << std::fixed << std::setprecision(2);
-                        // aim_log << " yaw=" << yaw_deg << "deg pitch=" << pitch_deg << "deg";
-                        // aim_log << " latency=" << latest_autoaim_time_ms << "ms";
-                        // std::cout << "\n" << aim_log.str() << std::endl;
-
-                        if (latest_aim_point.valid)
-                        {
-                            Eigen::Vector3d aim_xyz = latest_aim_point.xyza.head<3>();
-                            std::ostringstream point_log;
-                            point_log << std::fixed << std::setprecision(2);
-                            point_log << "[AutoAim] aim_xyz(m)=(" << aim_xyz.x() << ", " << aim_xyz.y() << ", " << aim_xyz.z() << ") dist=" << aim_xyz.norm();
-                            // std::cout << point_log.str() << std::endl;
-                        }
-                    }
+                    std::ostringstream ss;
+                    ss << std::fixed << std::setprecision(2) << "Yaw " << latest_autoaim_cmd->yaw * 180.0 / CV_PI << " deg  Pitch " << latest_autoaim_cmd->pitch * 180.0 / CV_PI << " deg";
+                    cv::putText(display_frame, ss.str(), cv::Point(10, display_frame.rows - 20), cv::FONT_HERSHEY_SIMPLEX, 0.5, cv::Scalar(0, 255, 0), 1);
                 }
                 else
                 {
-                    latest_autoaim_cmd.reset();
-                    latest_aim_point.valid = false;
-                    latest_aim_point.xyza.setZero();
-                    latest_autoaim_time_ms = 0.0;
+                    cv::putText(display_frame, "No target", cv::Point(10, display_frame.rows - 20), cv::FONT_HERSHEY_SIMPLEX, 0.5, cv::Scalar(0, 0, 255), 1);
                 }
 
-                // 绘制检测结果
-                drawArmorDetection(display_frame, detected_armors);
-
-                // 绘制Target详细信息
-                drawTargetInfo(display_frame, targets, tracker.state(), pnp_solver);
-
-                // 如果是temp_lost模拟帧，在屏幕上显示警告
-                if (is_temp_lost_frame)
-                {
-                    cv::putText(display_frame, "*** TEMP_LOST SIMULATION ***", cv::Point(display_frame.cols / 2 - 200, 50), cv::FONT_HERSHEY_SIMPLEX, 1.0, cv::Scalar(0, 0, 255), 3);
-                }
-
-                // 绘制弹道轨迹（使用 AimPoint，基于目标位置）
-                if (latest_aim_point.valid)
-                {
-                    drawTrajectory(display_frame, latest_aim_point, bullet_speed, config_path, camera_matrix, distort_coeffs, pnp_solver.R_gimbal2world_);
-                }
-
-                // 发布3D可视化数据到RViz2
-                // 发布相机位置（世界坐标系）
-                visualizer.publishCameraPosition(pnp_solver);
-
-                // 发布装甲板位置（世界坐标系）
-                // visualizer.publishArmorsWorld(detected_armors);
-
-                // 发布目标预测位置
-                if (!targets.empty())
-                {
-                    std::cout << "publishTargets" << std::endl;
-                    visualizer.publishTargets(targets);
-                }
-
-                // // 发布瞄准点（如果有效）
-                // if (latest_aim_point.valid)
-                // {
-                //     Eigen::Vector3d aim_xyz = latest_aim_point.xyza.head<3>();
-                //     visualizer.publishAimPoint(aim_xyz, {0.0, 1.0, 0.0});
-                // }
-
-                // 计算FPS
-                auto current_time = std::chrono::steady_clock::now();
-                auto fps_duration = std::chrono::duration<double>(current_time - last_fps_time).count();
-
-                if (fps_duration > 0.5)
-                { // 每0.5秒更新一次FPS
-                    fps = 1.0 / std::chrono::duration<double>(current_time - frame_start).count();
-                    last_fps_time = current_time;
-                }
-
-                // std::cout << "fps is " << fps << std::endl;
-
-                // // 显示性能信息
-                drawPerformanceInfo(display_frame, fps, detect_time, track_time);
-
-                // 控制台输出
-                if (frame_count % 30 == 0)
-                {
-                    // std::cout << "\rProcessing frame " << frame_count << "/" << total_frames << " | FPS: " << std::setprecision(3) << fps << " | Detected: " << detected_armors.size() << " | Tracking: " <<
-                    // targets.size()
-                    //           << " | State: " << tracker.state() << std::flush;
-                }
+                cv::imshow("Auto Aim Test - Target Visualization", display_frame);
             }
 
-            int aim_state_y = display_frame.rows - 100;
-            if (aim_state_y < 40) aim_state_y = 40;
-            int aim_angle_y = aim_state_y + 25;
-            int aim_meta_y = aim_angle_y + 25;
-            cv::Scalar aim_color = (latest_autoaim_cmd && latest_autoaim_cmd->valid) ? cv::Scalar(0, 255, 0) : cv::Scalar(0, 0, 255);
-
-            std::string aim_state_text = "AutoAim: ";
-            if (!latest_autoaim_cmd)
+            const int key = cv::waitKey(1) & 0xFF;
+            if (key == 'q' || key == 27)
             {
-                aim_state_text += "No target";
+                running = false;
+                break;
             }
-            else if (latest_autoaim_cmd->valid)
+            if (key == 'v')
             {
-                aim_state_text += latest_autoaim_cmd->shoot ? "Shoot" : "Locked";
-            }
-            else
-            {
-                aim_state_text += "Invalid";
-            }
-            cv::putText(display_frame, aim_state_text, cv::Point(10, aim_state_y), cv::FONT_HERSHEY_SIMPLEX, 0.55, aim_color, 2);
-
-            if (latest_autoaim_cmd)
-            {
-                std::ostringstream angles_ss;
-                angles_ss << std::fixed << std::setprecision(2);
-                angles_ss << "Yaw:" << latest_autoaim_cmd->yaw * 180.0 / CV_PI << "deg  ";
-                angles_ss << "Pitch:" << latest_autoaim_cmd->pitch * 180.0 / CV_PI << "deg";
-                cv::putText(display_frame, angles_ss.str(), cv::Point(10, aim_angle_y), cv::FONT_HERSHEY_SIMPLEX, 0.5, aim_color, 1);
-
-                std::ostringstream meta_ss;
-                meta_ss << std::fixed << std::setprecision(2);
-                meta_ss << "AimT:" << latest_autoaim_time_ms << "ms";
-                if (latest_aim_point.valid)
-                {
-                    Eigen::Vector3d aim_xyz = latest_aim_point.xyza.head<3>();
-                    meta_ss << " Dist:" << aim_xyz.norm() << "m";
-                }
-                cv::putText(display_frame, meta_ss.str(), cv::Point(10, aim_meta_y), cv::FONT_HERSHEY_SIMPLEX, 0.5, aim_color, 1);
-            }
-            else
-            {
-                cv::putText(display_frame, "Yaw/Pitch: N/A", cv::Point(10, aim_angle_y), cv::FONT_HERSHEY_SIMPLEX, 0.5, cv::Scalar(200, 200, 200), 1);
-                cv::putText(display_frame, "AimT: --", cv::Point(10, aim_meta_y), cv::FONT_HERSHEY_SIMPLEX, 0.5, cv::Scalar(200, 200, 200), 1);
-            }
-
-            std::string progress = "Frame: " + std::to_string(frame_count) + "/" + std::to_string(total_frames);
-            cv::putText(display_frame, progress, cv::Point(10, display_frame.rows - 20), cv::FONT_HERSHEY_SIMPLEX, 0.5, cv::Scalar(255, 255, 255), 1);
-
-            // 显示结果
-            cv::imshow("Auto Aim Test - Target Visualization", display_frame);
-            std::string save_dir = "/home/lai/大学/RoboMaster/NJU_RMVision/images/"; // 你想要保存的路径
-
-            std::string filename = save_dir + "frame_" + std::to_string(frame_count) + ".png";
-
-            // 保存
-            cv::imwrite(filename, display_frame);
-
-            // 10fps播放控制：计算处理耗时，如果小于目标时间则等待
-            if (!paused)
-            {
-                auto frame_end = std::chrono::steady_clock::now();
-                double frame_processing_time_ms = std::chrono::duration<double, std::milli>(frame_end - frame_start).count();
-                double wait_time_ms = target_frame_time_ms - frame_processing_time_ms;
-
-                // 如果处理时间超过目标时间，立即显示下一帧；否则等待剩余时间
-                int wait_key_ms = static_cast<int>(std::max(1.0, wait_time_ms));
-                char key = cv::waitKey(wait_key_ms) & 0xFF;
-
-                // 处理键盘输入
-                if (key == 'q' || key == 27)
-                { // 'q' 或 ESC 退出
-                    break;
-                }
-                else if (key == 'p')
-                { // 'p' 暂停/恢复
-                    paused = !paused;
-                    std::cout << (paused ? "\nPaused" : "\nResumed") << std::endl;
-                }
-            }
-            else
-            {
-                // 暂停模式下，等待任意按键
-                char key = cv::waitKey(0) & 0xFF;
-                if (key == 'q' || key == 27)
-                { // 'q' 或 ESC 退出
-                    break;
-                }
-                else if (key == 'p')
-                { // 'p' 暂停/恢复
-                    paused = !paused;
-                    std::cout << (paused ? "\nPaused" : "\nResumed") << std::endl;
-                }
-                else if (key == ' ')
-                { // 空格键单步执行
-                    if (cap.read(frame))
-                    {
-                        frame_count++;
-                    }
-                }
+                draw_mode = next_draw_mode(draw_mode);
+                std::cout << "Draw mode: " << draw_mode_name(draw_mode) << std::endl;
             }
         }
 
-        // 计算总体统计信息
-        auto end_time = std::chrono::steady_clock::now();
-        auto total_duration = std::chrono::duration<double>(end_time - start_time).count();
-        double avg_fps = frame_count / total_duration;
-
-        std::cout << "\n\nProcessing completed!" << std::endl;
-        std::cout << "Total frames processed: " << frame_count << std::endl;
-        std::cout << "Total time: " << std::setprecision(3) << total_duration << " seconds" << std::endl;
-        std::cout << "Average FPS: " << std::setprecision(3) << avg_fps << std::endl;
-
-        // 清理资源
+        running = false;
+        if (reader_thread.joinable()) reader_thread.join();
         cap.release();
         cv::destroyAllWindows();
     }
     catch (const std::exception &e)
     {
         std::cerr << "Error: " << e.what() << std::endl;
-        rclcpp::shutdown();
-        spin_thread.join();
         return -1;
     }
-
-    // 清理 ROS2
-    rclcpp::shutdown();
-    spin_thread.join();
-
-    std::cout << "OpenCV CUDA devices found: " << cv::cuda::getCudaEnabledDeviceCount() << std::endl;
-    std::cout << "OpenCV CUDA devices found: " << cv::cuda::getCudaEnabledDeviceCount() << std::endl;
 
     return 0;
 }

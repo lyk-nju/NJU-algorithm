@@ -33,8 +33,8 @@ class SimpleDecisionNode : public rclcpp::Node
 
     SimpleDecisionNode() : Node("simple_decision_node")
     {
-        // 读取导航命名空间，默认适配 navigation_task2 的 red_standard_robot1
-        std::string nav_ns = this->declare_parameter<std::string>("nav_namespace", "red_standard_robot1");
+
+        std::string nav_ns = this->declare_parameter<std::string>("nav_namespace", "");
         if (!nav_ns.empty() && nav_ns.front() != '/')
         {
             nav_ns = "/" + nav_ns;
@@ -46,7 +46,7 @@ class SimpleDecisionNode : public rclcpp::Node
         // 订阅自瞄 + judge 数据（Decision 不再向 Vision 发送自瞄相关话题）
         auto qos = rclcpp::QoS(rclcpp::KeepLast(10));
         autoaim_sub_ = this->create_subscription<std_msgs::msg::Float32MultiArray>(
-            "/auto_aim/result", qos, std::bind(&SimpleDecisionNode::autoAimCallback, this, std::placeholders::_1));
+            "/autoaim_data", qos, std::bind(&SimpleDecisionNode::autoAimCallback, this, std::placeholders::_1));
 
         // Nav2 action client
         nav_client_ = rclcpp_action::create_client<NavigateThroughPoses>(this, nav_action);
@@ -151,7 +151,6 @@ class SimpleDecisionNode : public rclcpp::Node
 
     // 最近一次自瞄 + judge 数据
     std::mutex data_mutex_;
-    bool has_latest_autoaim_{false};
     std_msgs::msg::Float32MultiArray latest_autoaim_msg_;
 
     // Navigation → Decision：Nav2 反馈与状态（与拓扑一致）
@@ -159,7 +158,8 @@ class SimpleDecisionNode : public rclcpp::Node
     std::mutex nav_status_mutex_;
     NavigateThroughPoses::Impl::FeedbackMessage::SharedPtr latest_nav_feedback_;
     int8_t goal_status_{action_msgs::msg::GoalStatus::STATUS_UNKNOWN};
-    int last_sent_target_waypoint_{-1};  // 避免在目标未变且仍在执行时重复发目标
+    int last_sent_target_waypoint_{-1};
+    int last_known_waypoint_id_{-1};
 
     // 简单状态机
     enum class State
@@ -174,9 +174,7 @@ class SimpleDecisionNode : public rclcpp::Node
         {
             std::lock_guard<std::mutex> lock(data_mutex_);
             latest_autoaim_msg_ = *msg;
-            has_latest_autoaim_ = true;
         }
-        // 与 ref 一致：每次收到自瞄+裁判数据就做一次决策并输出
         runDecisionOnce(*msg);
     }
 
@@ -194,32 +192,28 @@ class SimpleDecisionNode : public rclcpp::Node
         goal_status_ = msg->status_list.back().status;
     }
 
-    // 函数功能：用当前自瞄+裁判消息执行一次决策（由 /auto_aim/result 回调驱动，与 ref 的同步回调思路一致）
     void runDecisionOnce(const std_msgs::msg::Float32MultiArray& autoaim)
     {
-        // 拆出自瞄和 judge 部分
         if (autoaim.data.size() < 3)
         {
             return;
         }
 
         bool vision_valid = (autoaim.data[0] != 0.0f);
-        float vision_yaw = autoaim.data[1];
-        float vision_pitch = autoaim.data[2];
-
-        // 裁判数据当前仅两项：data[3]=game_time, data[4]=self_hp
-        io::JudgerData judge_raw;
-        if (autoaim.data.size() >= 5)
+        if (vision_valid)
         {
-            judge_raw.game_time = static_cast<int>(autoaim.data[3]);
-            judge_raw.self_hp = static_cast<int>(autoaim.data[4]);
+            cancelNavGoal();
         }
+        io::AimResult judge_raw;
+        judge_raw.has_enemy = vision_valid;
+        judge_raw.game_time = static_cast<int>(autoaim.data[1]);
+        judge_raw.self_hp = static_cast<int>(autoaim.data[2]);
 
         ParsedJudgeInfo info;
+        parse_judger_data(judge_raw, info);
+        bool has_judge = (info.game_time > 0 || info.self_hp > 0);
         float self_x = 0.0f;
         float self_y = 0.0f;
-        bool has_judge = parse_judger_data(judge_raw, info);
-        // 位置优先用 Nav2 feedback（当前协议无 self_x/self_y）
         {
             std::lock_guard<std::mutex> lock(nav_feedback_mutex_);
             if (latest_nav_feedback_)
@@ -236,21 +230,21 @@ class SimpleDecisionNode : public rclcpp::Node
             info.self_hp = 0;
         }
 
-        // 当前协议无位置，必须依赖 Nav2 feedback 才有路径点
         if (!latest_nav_feedback_)
         {
-            simpleStateMachine(vision_valid, vision_yaw, vision_pitch);
+            simpleStateMachine(vision_valid);
             return;
         }
 
         int wayPointID = rdsys_->checkNowWayPoint(self_x, self_y);
         if (wayPointID < 0)
         {
-            simpleStateMachine(vision_valid, vision_yaw, vision_pitch);
+            simpleStateMachine(vision_valid);
             return;
         }
+        last_known_waypoint_id_ = wayPointID;
 
-        int robot_mode = 0; // 0 表示常规模式
+        int robot_mode = 0;
         int hp = info.self_hp;
         int nowtime = info.game_time;
 
@@ -266,11 +260,10 @@ class SimpleDecisionNode : public rclcpp::Node
 
         if (!decision)
         {
-            simpleStateMachine(vision_valid, vision_yaw, vision_pitch);
+            simpleStateMachine(vision_valid);
             return;
         }
 
-        // 根据决策模式切换状态
         if (decision->decide_mode == 8)
         {
             state_ = State::AUTO_AIM;
@@ -280,23 +273,34 @@ class SimpleDecisionNode : public rclcpp::Node
             state_ = State::PATROL;
         }
 
-        // 若需要移动，则按照决策路径点发送导航目标
         if (state_ == State::PATROL)
         {
             sendNavGoal(wayPointID, decision->decide_wayPoint, decision->if_succession);
         }
     }
 
-    // 函数功能：退化版的简单状态机：只看 vision_valid（仅用于内部状态与导航，不向 Vision 发话题）
-    void simpleStateMachine(bool vision_valid, float /* vision_yaw */, float /* vision_pitch */)
+    void simpleStateMachine(bool vision_valid)
     {
         if (vision_valid)
         {
+            cancelNavGoal();
             state_ = State::AUTO_AIM;
         }
         else
         {
-            state_ = State::PATROL;
+            if (state_ == State::AUTO_AIM && last_known_waypoint_id_ >= 0)
+            {
+                state_ = State::PATROL;
+                auto wp = rdsys_->getWayPointByID(last_known_waypoint_id_);
+                if (wp)
+                {
+                    sendNavGoal(last_known_waypoint_id_, last_known_waypoint_id_, false);
+                }
+            }
+            else
+            {
+                state_ = State::PATROL;
+            }
         }
     }
 
@@ -378,6 +382,16 @@ class SimpleDecisionNode : public rclcpp::Node
 
         auto send_goal_options = typename rclcpp_action::Client<NavigateThroughPoses>::SendGoalOptions();
         nav_client_->async_send_goal(goal_msg, send_goal_options);
+    }
+
+    void cancelNavGoal()
+    {
+        if (!nav_client_ || !nav_client_->action_server_is_ready())
+        {
+            return;
+        }
+        nav_client_->async_cancel_all_goals();
+        last_sent_target_waypoint_ = -1;
     }
 };
 

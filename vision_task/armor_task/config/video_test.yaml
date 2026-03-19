@@ -1,4 +1,4 @@
-yolo_model_path: /home/user/NJU_RMVision/armor_task/models/best.onnx
-video_path : /home/user/NJU_RMVision/armor_task/assets/circular.avi
-config_path : /home/user/NJU_RMVision/armor_task/config/camera1.yaml
+yolo_model_path: /home/nvidia/NJU_RMVision/armor_task/models/best.engine
+video_path : /home/nvidia/NJU_RMVision/armor_task/assets/camera_record.avi
+config_path : /home/nvidia/NJU_RMVision/armor_task/config/camera1.yaml
 bullet_speed : 16.7

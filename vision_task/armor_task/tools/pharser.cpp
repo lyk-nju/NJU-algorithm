@@ -4,7 +4,55 @@
 #include <sstream>
 #include <vector>
 #include <sys/stat.h>
+#include <fcntl.h>
+#include <glob.h>
+#include <unistd.h>
 #include <yaml-cpp/yaml.h>
+
+// 自动检测可用的 ttyACM* 串口设备
+std::string detect_serial_port()
+{
+    glob_t glob_result;
+    int ret = glob("/dev/ttyACM*", 0, nullptr, &glob_result);
+    
+    if (ret != 0)
+    {
+        // ttyACM* 没找到，尝试 ttyUSB*
+        ret = glob("/dev/ttyUSB*", 0, nullptr, &glob_result);
+        if (ret != 0)
+        {
+            globfree(&glob_result);
+            std::cerr << "Warning: No serial port (ttyACM*/ttyUSB*) found" << std::endl;
+            return "";
+        }
+    }
+    
+    // 遍历找到的第一个可打开的设备
+    for (size_t i = 0; i < glob_result.gl_pathc; i++)
+    {
+        const char* device = glob_result.gl_pathv[i];
+        int fd = open(device, O_RDWR | O_NOCTTY | O_NONBLOCK);
+        if (fd >= 0)
+        {
+            close(fd);
+            std::cout << "Auto-detected serial port: " << device << std::endl;
+            globfree(&glob_result);
+            return std::string(device);
+        }
+    }
+    
+    globfree(&glob_result);
+    std::cerr << "Warning: Found serial ports but none are accessible" << std::endl;
+    return "";
+}
+
+// 检查端口是否需要自动检测（为空或包含 "*"）
+bool needs_auto_detect(const std::string& port)
+{
+    return port.empty() || port == "*" || 
+           port.find("*") != std::string::npos || 
+           port.find("auto") != std::string::npos;
+}
 
 std::pair<std::string, std::string> load_ports_from_config(const std::string &config_path)
 {
@@ -17,13 +65,29 @@ std::pair<std::string, std::string> load_ports_from_config(const std::string &co
         if (stat(config_path.c_str(), &buffer) == 0)
         {
             YAML::Node config = YAML::LoadFile(config_path);
-            if (config["send_port"] && !config["send_port"].as<std::string>().empty())
+            if (config["send_port"])
             {
-                send_port = config["send_port"].as<std::string>();
+                std::string configured_port = config["send_port"].as<std::string>();
+                if (needs_auto_detect(configured_port))
+                {
+                    send_port = detect_serial_port();
+                }
+                else if (!configured_port.empty())
+                {
+                    send_port = configured_port;
+                }
             }
-            if (config["receive_port"] && !config["receive_port"].as<std::string>().empty())
+            if (config["receive_port"])
             {
-                receive_port = config["receive_port"].as<std::string>();
+                std::string configured_port = config["receive_port"].as<std::string>();
+                if (needs_auto_detect(configured_port))
+                {
+                    receive_port = detect_serial_port();
+                }
+                else if (!configured_port.empty())
+                {
+                    receive_port = configured_port;
+                }
             }
             std::cout << "Loaded ports from config: " << send_port << " (send), " << receive_port << " (receive)" << std::endl;
         }
@@ -115,14 +179,30 @@ TestConfig load_deploy_test_config(const std::string &config_path)
                 config.bullet_speed = yaml["bullet_speed"].as<double>();
             }
             
-            if (yaml["send_port"] && !yaml["send_port"].as<std::string>().empty())
+            if (yaml["send_port"])
             {
-                config.send_port = yaml["send_port"].as<std::string>();
+                std::string configured_port = yaml["send_port"].as<std::string>();
+                if (needs_auto_detect(configured_port))
+                {
+                    config.send_port = detect_serial_port();
+                }
+                else
+                {
+                    config.send_port = configured_port;
+                }
             }
             
-            if (yaml["receive_port"] && !yaml["receive_port"].as<std::string>().empty())
+            if (yaml["receive_port"])
             {
-                config.receive_port = yaml["receive_port"].as<std::string>();
+                std::string configured_port = yaml["receive_port"].as<std::string>();
+                if (needs_auto_detect(configured_port))
+                {
+                    config.receive_port = detect_serial_port();
+                }
+                else
+                {
+                    config.receive_port = configured_port;
+                }
             }
             
             std::cout << "Loaded deploy test config from: " << config_path << std::endl;

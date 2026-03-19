@@ -70,6 +70,9 @@ class AutoAimSystem
     /// 处理一帧图像，返回瞄准控制量与中间结果
     ProcessResult processFrame(const cv::Mat &img, std::chrono::steady_clock::time_point image_timestamp);
 
+    bool usingTensorRt() const { return detector_.usingTensorRt(); }
+    const char *backendName() const { return detector_.backendName(); }
+
     /// 获取 PnP 解算器（用于弹道绘制等，如 drawTrajectory 需要 R_gimbal2world_）
     const PnpSolver &getPnpSolver() const { return pnp_solver_; }
 

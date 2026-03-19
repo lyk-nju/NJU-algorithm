@@ -62,6 +62,9 @@ public:
     float getSeekTHR() const;
     void setSeekTHR(float thr);
 
+    std::vector<std::shared_ptr<WayPoint>> wayPointMap;
+    std::vector<std::shared_ptr<Decision>> decisions;
+
 private:
     int calculatePosition(RobotPosition& pos);
     cv::Point2i createEndPointByTheta(double x1, double y1, double theta, int length);
@@ -76,8 +79,6 @@ private:
     float _distance_THR = 0.0f;
     float _seek_THR = 5.0f;
 
-    std::vector<std::shared_ptr<WayPoint>> wayPointMap;
-    std::vector<std::shared_ptr<Decision>> decisions;
     std::map<int, std::vector<int>> connection_map;
     std::shared_ptr<GameHandler> myGameHandler;
 

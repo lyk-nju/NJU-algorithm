@@ -22,6 +22,7 @@ class Tracker
 
     std::vector<Target> track(std::vector<Armor> &armors, std::chrono::steady_clock::time_point t);
 
+
   private:
     PnpSolver &solver_;
     Color enemy_color_;

@@ -20,8 +20,6 @@ Target::Target(const Armor &armor, std::chrono::steady_clock::time_point t, int 
     x0 << center_x, 0, center_y, 0, center_z, 0, ypr[0], 0, r, 0, 0; // 初始化预测量
     Eigen::MatrixXd P0 = P0_dig.asDiagonal();
 
-    // std::cout<<"Initial center: " << center_x << ", " << center_y << ", " << center_z << std::endl;
-
     // 防止夹角求和出现异常值
     auto x_add = [](const Eigen::VectorXd &a, const Eigen::VectorXd &b) -> Eigen::VectorXd
     {
@@ -87,7 +85,7 @@ void Target::predict(double dt)
     {     0,       0,        0,        0, b * v1, c * v1,      0,      0, 0, 0, 0},
     {     0,       0,        0,        0,      0,      0, a * v2, b * v2, 0, 0, 0},
     {     0,       0,        0,        0,      0,      0, b * v2, c * v2, 0, 0, 0},
-    {     0,       0,        0,        0,      0,      0,      0,      0, 1e-4, 0, 0},
+    {     0,       0,        0,        0,      0,      0,      0,      0, 1e-5, 0, 0},
     {     0,       0,        0,        0,      0,      0,      0,      0, 0, 1e-3, 0},
     {     0,       0,        0,        0,      0,      0,      0,      0, 0, 0, 1e-4}
   };
@@ -258,10 +256,15 @@ Eigen::Vector3d Target::h_armor_xyz(const Eigen::VectorXd &x, int id) const
     auto use_l_h = (armor_num_ == 4) && (id == 1 || id == 3);
 
     auto r = (use_l_h) ? x[8] + x[9] : x[8];
+    // std::cout<<"r:"<<x[8]<<std::endl;
+    // std::cout<<"dl"<<x[9]<<std::endl;
+    // std::cout<<"actual r :"<<r<<std::endl;
+    // std::cout<<"dh "<<x[10]<<std::endl;
     auto armor_x = x[0] - r * std::cos(angle);
     auto armor_y = x[2] - r * std::sin(angle);
     auto armor_z = (use_l_h) ? x[4] + x[10] : x[4];
 
+    //std::cout<<"R:"<< r <<std::endl;
     return {armor_x, armor_y, armor_z};
 }
 

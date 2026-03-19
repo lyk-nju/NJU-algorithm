@@ -11,6 +11,7 @@ communication.cpp:
 #include "../../io/keyboard_manager.hpp"
 #include "../../io/serial_manager.hpp"
 #include "../../tools/pharser.hpp"
+#include "../../tools/transfer.hpp"
 #include <atomic>
 #include <chrono>
 #include <iomanip>
@@ -34,9 +35,16 @@ int main(int argc, char *argv[])
         receive_port = argv[2];
         std::cout << "Using command line ports: " << send_port << " (send), " << receive_port << " (receive)" << std::endl;
     }
+    else if (argc == 2)
+    {
+        send_port = argv[1];
+        receive_port = argv[1];
+        std::cout << "Using single command line port: " << send_port << " (shared send/receive)" << std::endl;
+    }
     else
     {
         std::cout << "Usage: " << argv[0] << " [send_port] [receive_port]" << std::endl;
+        std::cout << "       " << argv[0] << " [shared_port]" << std::endl;
         std::cout << "  (Ports can be specified via command line or ../config/deploy.yaml)" << std::endl;
     }
 
@@ -63,6 +71,30 @@ int main(int argc, char *argv[])
         const auto send_interval = std::chrono::milliseconds(50); // 每50ms发送一次
         io::Command last_cmd = keyboard_manager.get_command();
 
+        geometry_msgs::msg::Twist move_twist;
+        move_twist.linear.x = 1.0;
+        move_twist.linear.y = 0.0;
+        move_twist.linear.z = 0.0;
+        move_twist.angular.x = 0.0;
+        move_twist.angular.y = 0.0;
+        move_twist.angular.z = 0.0;
+
+        geometry_msgs::msg::Twist stop_twist;
+
+        const auto base_command_duration = std::chrono::milliseconds(500);
+        const auto base_command_start_time = std::chrono::steady_clock::now();
+        bool base_command_zeroed = false;
+
+        auto print_base_command = [](const io::base_Command &cmd, const std::string &label)
+        {
+            std::cout << label;
+            std::cout << "v_x" << cmd.v_x << "v_y" << cmd.v_y << "w_yaw:" << cmd.w_yaw;
+            std::cout << std::endl;
+        };
+
+        print_base_command(tools::from_cmd_vel(move_twist), "Base command payload (first 0.5s): ");
+        print_base_command(tools::from_cmd_vel(stop_twist), "Base command payload (after 0.5s): ");
+
         while (running)
         {
             // 获取当前命令
@@ -71,9 +103,15 @@ int main(int argc, char *argv[])
 
             // 定期发送命令（即使没有按键，也保持发送当前值）
             auto now = std::chrono::steady_clock::now();
+            io::base_Command base_cmd = tools::from_cmd_vel((now - base_command_start_time) < base_command_duration ? move_twist : stop_twist);
+            if (!base_command_zeroed && (now - base_command_start_time) >= base_command_duration)
+            {
+                base_command_zeroed = true;
+                std::cout << "Base command reached 0.5s, clearing velocity to zero." << std::endl;
+            }
             if (cmd_changed || (now - last_send_time) >= send_interval)
             {
-                bool success = usb.send_command(cmd); // 使用字符串版本
+                bool success = usb.send_command(cmd, base_cmd);
                 // 打印实际发送的数据格式
                 {
                     int valid_i = cmd.valid ? 1 : 0;
@@ -81,7 +119,9 @@ int main(int argc, char *argv[])
                     std::ostringstream ss;
                     ss.setf(std::ios::fixed);
                     ss.precision(6);
-                    ss << valid_i << "," << shoot_i << "," << cmd.yaw << "," << cmd.pitch << "\n";
+                    ss << valid_i << "," << shoot_i << "," << cmd.yaw << "," << cmd.pitch;
+                    ss << "," << base_cmd.v_x << "," << base_cmd.v_y << "," << base_cmd.w_yaw;
+                    ss << "\n";
                     std::cout << "  [实际发送] " << ss.str();
                 }
                 if (cmd_changed)
@@ -100,10 +140,11 @@ int main(int argc, char *argv[])
                 last_send_time = now;
             }
 
-            // 尝试接收数据（非阻塞）
+            // 尝试接收数据（非阻塞），同时打印比赛时间和剩余血量
             Eigen::Quaterniond quat;
             double yaw_rad, pitch_rad;
-            bool received = usb.receive_quaternion(quat, yaw_rad, pitch_rad);
+            io::JudgerData judger_data;
+            bool received = usb.receive_all(quat, yaw_rad, pitch_rad, judger_data);
             if (received)
             {
                 // 获取接收数据的时间戳（高精度）
@@ -126,11 +167,13 @@ int main(int argc, char *argv[])
                           << "y=" << quat.y() << ", "
                           << "z=" << quat.z() << ") | "
                           << "yaw=" << yaw_rad << " rad (" << (yaw_rad * 180.0 / 3.14159265) << " deg), "
-                          << "pitch=" << pitch_rad << " rad (" << (pitch_rad * 180.0 / 3.14159265) << " deg)" << std::endl;
+                          << "pitch=" << pitch_rad << " rad (" << (pitch_rad * 180.0 / 3.14159265) << " deg), "
+                          << "game_time=" << judger_data.game_time << ", self_hp=" << judger_data.self_hp << std::endl;
 
                 Eigen::Vector3d euler = quat.toRotationMatrix().eulerAngles(2, 1, 0);
                 std::cout << "  [" << ss.str() << "] Calculated Euler (deg) ZYX: yaw=" << (euler[0] * 180.0 / 3.14159265) << " pitch=" << (euler[1] * 180.0 / 3.14159265) << " roll=" << (euler[2] * 180.0 / 3.14159265)
                           << std::endl;
+                std::cout << "  [" << ss.str() << "] 裁判信息: 比赛时间=" << judger_data.game_time << ", 剩余血量=" << judger_data.self_hp << std::endl;
             }
 
             // 短暂休眠，避免CPU占用过高

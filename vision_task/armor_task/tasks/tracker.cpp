@@ -20,7 +20,6 @@ Tracker::Tracker(const std::string &config_path, PnpSolver &solver) : solver_{so
     // 初始化 temp_lost 阈值（使用配置文件中的值）
     normal_temp_lost_count_ = max_temp_lost_count_;
 
-    // std::cout << "[Tracker] Initialized with temp_lost threshold: " << normal_temp_lost_count_ << std::endl;
 }
 
 std::string Tracker::state() const { return state_; }
@@ -38,7 +37,7 @@ std::vector<Target> Tracker::track(std::vector<Armor> &armors, std::chrono::stea
     // 过滤掉非我方装甲板
     auto it = std::remove_if(armors.begin(), armors.end(), [&](const Armor &a) { return a.color != enemy_color_; });
     armors.erase(it, armors.end());
-
+    //std::cout<<"total num of amrmors"<<armors.size()<<std::endl;
     // 过滤前哨站顶部装甲板
     // armors.remove_if([this](const auto_aim::Armor & a) {
     //   return a.name == ArmorName::outpost &&
@@ -48,14 +47,14 @@ std::vector<Target> Tracker::track(std::vector<Armor> &armors, std::chrono::stea
 
     // if (armors.size() > 3) {
     //  优先选择靠近图像中心的装甲板
+    const cv::Point2f img_center(1440.0f / 2.0f, 1080.0f / 2.0f);
     std::sort(armors.begin(),
               armors.end(),
-              [](const Armor &a, const Armor &b)
+              [img_center](const Armor &a, const Armor &b)
               {
-                  cv::Point2f img_center(1440 / 2, 1080 / 2); // TODO
-                  auto distance_1 = cv::norm(a.center - img_center);
-                  auto distance_2 = cv::norm(b.center - img_center);
-                  return distance_1 < distance_2;
+                  float d1=(a.center.x-img_center.x)*(a.center.x-img_center.x)+(a.center.y-img_center.y)*(a.center.y-img_center.y);
+                  float d2=(b.center.x-img_center.x)*(b.center.x-img_center.x)+(b.center.y-img_center.y)*(b.center.y-img_center.y);
+                  return d1 < d2;
               });
 
     // 保留排序后的前三个
@@ -250,38 +249,85 @@ bool Tracker::update_target(std::vector<Armor> &armors, std::chrono::steady_cloc
 {
     target_.predict(t);
 
-    int found_count = 0;
-    // double min_x = 1e10;  // 画面最左侧
-
-    // 调试输出：当前追踪的目标信息
-    // std::cout << "[Tracker] Updating target, looking for CarNum=" << target_.car_num << " | Available armors: " << armors.size() << std::endl;
-
-    for (const auto &armor : armors)
-    {
-        // std::cout << "  Armor CarNum=" << armor.car_num << " (match: " << (armor.car_num == target_.car_num ? "YES" : "NO") << ")" << std::endl;
-
-        if (armor.car_num != target_.car_num) continue;
-        found_count++;
-        // min_x = armor.center.x < min_x ? armor.center.x : min_x;
-    }
-
-    // std::cout << "[Tracker] Found " << found_count << " matching armors" << std::endl;
-
-    if (found_count == 0) return false;
+    const auto predicted_armors = target_.armor_xyza_list();
+    Armor *best_armor = nullptr;
+    double best_score = std::numeric_limits<double>::max();
 
     for (auto &armor : armors)
     {
-        if (armor.car_num != target_.car_num
-            //  || armor.center.x != min_x
-        )
-            continue;
+        if (armor.car_num != target_.car_num) continue;
 
-        solver_._solve_pnp(armor);
+        if (!solver_._solve_pnp(armor)) continue;
 
-        target_.update(armor);
+        double min_position_error = std::numeric_limits<double>::max();
+        double min_angle_error = std::numeric_limits<double>::max();
+
+        for (const auto &xyza : predicted_armors)
+        {
+            const Eigen::Vector3d predicted_xyz = xyza.head<3>();
+            const Eigen::Vector3d predicted_ypd = tools::xyz2ypd(predicted_xyz);
+            const double position_error = (armor.p_world - predicted_xyz).norm();
+            const double yaw_error = std::abs(tools::limit_rad(armor.ypr_in_world[0] - xyza[3]));
+            const double centerline_error = std::abs(tools::limit_rad(armor.ypd_in_world[0] - predicted_ypd[0]));
+            const double angle_error = yaw_error + centerline_error;
+
+            min_position_error = std::min(min_position_error, position_error);
+            min_angle_error = std::min(min_angle_error, angle_error);
+        }
+
+        const double score = min_position_error + 0.35 * min_angle_error;
+        if (score < best_score)
+        {
+            best_score = score;
+            best_armor = &armor;
+        }
     }
 
+    if (best_armor == nullptr) return false;
+
+    target_.update(*best_armor);
     return true;
 }
+}
+// bool Tracker::update_target(std::vector<Armor> &armors, std::chrono::steady_clock::time_point t)
+// {
+//     // 1. 预测必须做
+//     target_.predict(t);
 
-} // namespace armor_task
+//     if (armors.empty()) return false;
+
+//     // 2. 寻找最佳匹配装甲板
+//     Armor* best_armor = nullptr;
+//     float min_dist_sq = 1e10; // 使用距离平方
+//     const cv::Point2f img_center(1440.0f / 2, 1080.0f / 2);
+
+//     for (auto &armor : armors)
+//     {
+//         // 严格匹配 ID
+//         if (armor.car_num != target_.car_num) continue;
+
+//         // 简单的距离筛选（如果已经是排序过的，第一个匹配的就是最好的，可以直接 break）
+//         // 这里假设 armors 已经在 track 函数里 sort 过了
+//         best_armor = &armor;
+//         break; 
+        
+//         // 如果上面没有 sort，则需要在这里遍历找最近的：
+//         /*
+//         float d = distance_sq(armor.center, img_center);
+//         if (d < min_dist_sq) {
+//             min_dist_sq = d;
+//             best_armor = &armor;
+//         }
+//         */
+//     }
+
+//     if (!best_armor) return false;
+
+//     // 3. 关键优化：只对【唯一】的最佳装甲板做 PnP 和 Update
+//     // 避免了对所有装甲板做 PnP 的巨大开销
+//     solver_._solve_pnp(*best_armor);
+//     target_.update(*best_armor);
+
+//     return true;
+// }
+// } // namespace armor_task

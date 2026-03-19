@@ -1,0 +1,2 @@
+source /home/nvidia/NJU-algorithm/navigation_task/install/setup.bash
+ros2 launch rm_nav_bringup bringup_real.launch.py world:=my_lab_map mode:=nav lio:=fastlio localization:=amcl lio_rviz:=False nav_rviz:=False

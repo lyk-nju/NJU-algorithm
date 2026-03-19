@@ -1,67 +1,83 @@
-cmake_minimum_required(VERSION 3.10)
-project(hik_camera_calibration_standalone)
+cmake_minimum_required(VERSION 3.8)
+project(hik_camera)
 
-set(CMAKE_CXX_STANDARD 14)
-set(CMAKE_CXX_STANDARD_REQUIRED ON)
+if(CMAKE_COMPILER_IS_GNUCXX OR CMAKE_CXX_COMPILER_ID MATCHES "Clang")
+  add_compile_options(-Wall -Wextra -Wpedantic)
+endif()
 
-# 查找OpenCV
+# ROS 2 Dependencies
+find_package(ament_cmake REQUIRED)
+find_package(rclcpp REQUIRED)
+find_package(rclcpp_components REQUIRED)
+find_package(sensor_msgs REQUIRED)
+find_package(image_transport REQUIRED)
+find_package(camera_info_manager REQUIRED)
+
+# ---------------------------------------------------------
+# 强制指定使用自定义编译的 cv_bridge 和 OpenCV
+# ---------------------------------------------------------
+set(cv_bridge_DIR "/usr/local/share/cv_bridge/cmake")
+find_package(cv_bridge REQUIRED)
+
+set(OpenCV_DIR "/usr/local/lib/cmake/opencv4")
 find_package(OpenCV REQUIRED)
 
-# 包含头文件
+# Include Directories
 include_directories(
+    src
     hikSDK/include
     ${OpenCV_INCLUDE_DIRS}
+    ${cv_bridge_INCLUDE_DIRS}
+    ${camera_info_manager_INCLUDE_DIRS}
+    ${image_transport_INCLUDE_DIRS}
 )
 
-# 设置库路径
+# Set Hikvision SDK Library Path
 if(CMAKE_SYSTEM_PROCESSOR MATCHES "x86_64")
-    link_directories(hikSDK/lib/amd64)
+    set(HIK_LIB_DIR "${CMAKE_CURRENT_SOURCE_DIR}/hikSDK/lib/amd64")
 elseif(CMAKE_SYSTEM_PROCESSOR MATCHES "aarch64")
-    link_directories(hikSDK/lib/arm64)
+    set(HIK_LIB_DIR "${CMAKE_CURRENT_SOURCE_DIR}/hikSDK/lib/arm64")
 else()
     message(FATAL_ERROR "Unsupported system architecture: ${CMAKE_SYSTEM_PROCESSOR}")
 endif()
 
-# 创建可执行文件
-add_executable(${PROJECT_NAME} 
-    hik_camera_calibration_standalone.cpp
+link_directories(${HIK_LIB_DIR})
+
+# Create Executable
+# Note: src/main.cpp includes hik_camera_node.cpp directly
+add_executable(hik_camera_node src/main.cpp)
+
+# Use ament_target_dependencies for standard ROS 2 packages
+ament_target_dependencies(hik_camera_node
+  rclcpp
+  rclcpp_components
+  sensor_msgs
+  image_transport
+  camera_info_manager
 )
 
-# 创建GUI版本
-add_executable(hik_camera_calibration_gui
-    hik_camera_calibration_gui.cpp
-)
-
-# 链接库
-target_link_libraries(${PROJECT_NAME}
+target_link_libraries(hik_camera_node
+    # ${rclcpp_LIBRARIES} # Handled by ament_target_dependencies
+    # ${sensor_msgs_LIBRARIES}
+    # ${image_transport_LIBRARIES}
+    # ${camera_info_manager_LIBRARIES}
+    ${cv_bridge_LIBRARIES} # cv_bridge
     ${OpenCV_LIBS}
-    FormatConversion
-    MediaProcess
     MvCameraControl
-    MVRender
     MvUsb3vTL
-)
-
-# 链接GUI版本的库
-target_link_libraries(hik_camera_calibration_gui
-    ${OpenCV_LIBS}
-    FormatConversion
     MediaProcess
-    MvCameraControl
+    FormatConversion
     MVRender
-    MvUsb3vTL
+    X11 # Often needed for MVRender if on linux
 )
 
-# 设置输出目录
-set_target_properties(${PROJECT_NAME} PROPERTIES
-    RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin
+# Installation
+install(TARGETS hik_camera_node
+  DESTINATION lib/${PROJECT_NAME}
 )
 
-set_target_properties(hik_camera_calibration_gui PROPERTIES
-    RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin
+install(DIRECTORY launch config
+  DESTINATION share/${PROJECT_NAME}
 )
 
-# 打印信息
-message(STATUS "OpenCV version: ${OpenCV_VERSION}")
-message(STATUS "OpenCV include dirs: ${OpenCV_INCLUDE_DIRS}")
-message(STATUS "System processor: ${CMAKE_SYSTEM_PROCESSOR}")
+ament_package()

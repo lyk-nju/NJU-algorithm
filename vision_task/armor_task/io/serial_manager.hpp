@@ -16,16 +16,23 @@ struct Command
     float pitch = 0.0f; // 目标pitch角度 (弧度, radians)
 };
 
-
 struct base_Command
 {
-    std::vector<double> values; // 裁判系统原始数值，顺序按协议
+    float v_x = 0.0f;  
+    float v_y = 0.0f;
+    float w_yaw = 0.0f;
 };
 
 struct JudgerData
 {
-    int game_time = 0;           // 比赛时间（如剩余秒数，由串口协议约定）
-    int self_hp = 0;             // 自身血量
+    int game_time = 0; // 比赛时间（如剩余秒数，由串口协议约定）
+    int self_hp = 0;   // 自身血量
+};
+
+struct AimerData
+{
+    bool cmd_valid = false;
+    JudgerData judger_data;
 };
 
 struct imu_data
@@ -35,7 +42,6 @@ struct imu_data
     float q3;
     float q4;
 };
-
 
 class USB
 {

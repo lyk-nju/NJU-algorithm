@@ -121,12 +121,7 @@ bool USB::send_command(const Command &cmd, const base_Command &base_command)
     ss.setf(std::ios::fixed);
     ss.precision(6);
 
-    ss << valid_i << "," << shoot_i << "," << cmd.yaw << "," << cmd.pitch;
-
-    for (double v : base_command.values)
-    {
-        ss << "," << v;
-    }
+    ss << valid_i << "," << shoot_i << "," << cmd.yaw << "," << cmd.pitch<< "," << base_command.v_x<< "," << base_command.v_y<< "," << base_command.w_yaw;
 
     ss << "\n";
 
@@ -202,8 +197,8 @@ bool USB::receive_all(Eigen::Quaterniond &quat, double &yaw, double &pitch, Judg
     buffer.erase(0, line_end_pos + 1);
 
     // 5. 解析数据：w,x,y,z,yaw,pitch,game_time,self_hp
-    judger_data.game_time = 0;
-    judger_data.self_hp = 0;
+    judger_data.game_time = -1;
+    judger_data.self_hp = -1;
 
     std::vector<double> nums;
     nums.reserve(16); // 预留一点空间
@@ -242,6 +237,7 @@ bool USB::receive_all(Eigen::Quaterniond &quat, double &yaw, double &pitch, Judg
             return false; // 某个字段不是合法数字
         }
     }
+    // std::cout << "Num size: " << nums.size() << std::endl;
 
     if (nums.size() < 6)
     {
@@ -253,6 +249,9 @@ bool USB::receive_all(Eigen::Quaterniond &quat, double &yaw, double &pitch, Judg
     quat = Eigen::Quaterniond(nums[0], nums[1], nums[2], nums[3]);
     yaw = nums[4];
     pitch = nums[5];
+
+    // if (nums.size() >= 7)
+    //     std::cout << "size right" << std::endl;
 
     // 第 7、8 个：比赛时间、自身血量
     if (nums.size() >= 7)

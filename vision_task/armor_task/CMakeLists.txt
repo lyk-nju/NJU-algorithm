@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.10)
 project(ArmorTask)
-
+enable_language(CUDA)
 # 设置 C++ 标准
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -39,6 +39,8 @@ find_package(spdlog REQUIRED)
 # 查找 ROS 2 依赖
 find_package(rclcpp REQUIRED)
 find_package(sensor_msgs REQUIRED)
+find_package(geometry_msgs REQUIRED)
+find_package(std_msgs REQUIRED)
 find_package(visualization_msgs REQUIRED)
 
 # 手动添加 cv_bridge 的包含目录
@@ -52,7 +54,7 @@ endif()
 include_directories(/opt/ros/humble/include/cv_bridge)
 include_directories(/usr/local/include/cv_bridge)
 include_directories(/home/user/vision_opencv/cv_bridge/include)
-
+include_directories(/usr/local/cuda/include)
 # 设置包含目录
 include_directories(
     ${CMAKE_CURRENT_SOURCE_DIR}/include
@@ -88,6 +90,7 @@ endif()
 # 添加源文件（基础源文件，不包含 ROS2）
 set(SOURCES
     #tasks/main.cpp
+    tasks/postprocess.cu
     tasks/auto_aim_system.cpp
     tasks/detector.cpp
     tasks/pnp_solver.cpp
@@ -103,6 +106,7 @@ set(SOURCES
     tools/transfer.cpp
     io/serial_manager.cpp
     io/keyboard_manager.cpp
+    cuda/yolo_decode.cu
 )
 
 # 不包含可视化器的源文件（用于不需要 ROS2 的测试）
@@ -121,6 +125,8 @@ set(SOURCES_NO_VISUALIZER
     tools/transfer.cpp
     io/serial_manager.cpp
     io/keyboard_manager.cpp
+    cuda/yolo_decode.cu
+    tasks/postprocess.cu
 )
 
 # ROS2 相关源文件
@@ -138,6 +144,7 @@ add_executable(pnp_solver_test test/deploy/pnp_solver.cpp ${SOURCES} ${ROS2_SOUR
 add_executable(target_test test/deploy/target.cpp ${SOURCES} ${ROS2_SOURCES})
 add_executable(auto_aimer_test test/deploy/auto_aimer.cpp ${SOURCES} ${ROS2_SOURCES})
 add_executable(communication_test test/deploy/communication.cpp ${SOURCES_NO_VISUALIZER})
+add_executable(fake_publish test/deploy/fake_publish.cpp)
 
 
 # 链接 ROS 2 的库
@@ -152,9 +159,13 @@ target_link_libraries(video_test
     pthread 
     rclcpp::rclcpp
     visualization_msgs::visualization_msgs__rosidl_typesupport_cpp
+    nvinfer
+    cudart
+    -L/usr/local/cuda/lib64
 )
 
 # 链接 deploy 测试可执行文件（需要 ROS2 和 cv_bridge）
+
 target_link_libraries(camera_sub_test 
     ${OpenCV_LIBS} 
     ${EIGEN3_LIBRARIES} 
@@ -164,6 +175,9 @@ target_link_libraries(camera_sub_test
     rclcpp::rclcpp
     cv_bridge::cv_bridge
     visualization_msgs::visualization_msgs__rosidl_typesupport_cpp
+    nvinfer
+    cudart
+    -L/usr/local/cuda/lib64
 )
 
 target_link_libraries(communication_test 
@@ -172,6 +186,15 @@ target_link_libraries(communication_test
     yaml-cpp 
     spdlog::spdlog 
     pthread
+    nvinfer
+    cudart
+    -L/usr/local/cuda/lib64
+)
+
+target_link_libraries(fake_publish
+    pthread
+    rclcpp::rclcpp
+    geometry_msgs::geometry_msgs__rosidl_typesupport_cpp
 )
 
 target_link_libraries(detector_test 
@@ -183,6 +206,9 @@ target_link_libraries(detector_test
     rclcpp::rclcpp
     cv_bridge::cv_bridge
     visualization_msgs::visualization_msgs__rosidl_typesupport_cpp
+    nvinfer
+    cudart
+    -L/usr/local/cuda/lib64
 )
 
 target_link_libraries(pnp_solver_test 
@@ -194,6 +220,9 @@ target_link_libraries(pnp_solver_test
     rclcpp::rclcpp
     cv_bridge::cv_bridge
     visualization_msgs::visualization_msgs__rosidl_typesupport_cpp
+    nvinfer
+    cudart
+    -L/usr/local/cuda/lib64
 )
 
 target_link_libraries(target_test 
@@ -205,6 +234,9 @@ target_link_libraries(target_test
     rclcpp::rclcpp
     cv_bridge::cv_bridge
     visualization_msgs::visualization_msgs__rosidl_typesupport_cpp
+    nvinfer
+    cudart
+    -L/usr/local/cuda/lib64
 )
 
 target_link_libraries(auto_aimer_test 
@@ -216,7 +248,11 @@ target_link_libraries(auto_aimer_test
     rclcpp::rclcpp
     cv_bridge::cv_bridge
     visualization_msgs::visualization_msgs__rosidl_typesupport_cpp
+    nvinfer
+    cudart
+    -L/usr/local/cuda/lib64
 )
+
 
 # 为所有可执行文件设置 RPATH，强制使用系统 libstdc++
 set_target_properties(
@@ -227,6 +263,7 @@ set_target_properties(
     target_test 
     auto_aimer_test 
     communication_test
+    fake_publish
     PROPERTIES
         BUILD_RPATH "/usr/lib/x86_64-linux-gnu"
         INSTALL_RPATH "/usr/lib/x86_64-linux-gnu"
@@ -241,6 +278,7 @@ target_compile_options(detector_test PRIVATE -Wall -Wextra)
 target_compile_options(pnp_solver_test PRIVATE -Wall -Wextra)
 target_compile_options(target_test PRIVATE -Wall -Wextra)
 target_compile_options(auto_aimer_test PRIVATE -Wall -Wextra)
+target_compile_options(fake_publish PRIVATE -Wall -Wextra)
 
 # 设置构建类型为 Debug
 set(CMAKE_BUILD_TYPE Debug)
@@ -254,6 +292,7 @@ if(CMAKE_BUILD_TYPE STREQUAL "Debug")
     target_compile_options(pnp_solver_test PRIVATE -g)
     target_compile_options(target_test PRIVATE -g)
     target_compile_options(auto_aimer_test PRIVATE -g)
+    target_compile_options(fake_publish PRIVATE -g)
 endif()
 
 # 创建一个运行 video_test 的包装脚本

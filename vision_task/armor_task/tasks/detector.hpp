@@ -1,12 +1,31 @@
 #pragma once
 
 #include "structures.hpp"
+//#include "preprocess.hpp"
 #include <opencv2/dnn.hpp>
 #include <opencv2/opencv.hpp>
 #include <string>
 #include <vector>
+#include <NvInfer.h>
+#include <cuda_runtime_api.h>
+#include "../cuda/yolo_decode.cuh"
 
 namespace armor_task {
+void launch_preprocess_kernel(
+    const uint8_t* src, int src_w, int src_h, int src_step, // 输入：原始图像信息
+    float* dst, int dst_w, int dst_h,                       // 输出：模型输入 buffer
+    cudaStream_t stream
+);
+class Logger : public nvinfer1::ILogger
+{
+public:
+    void log(Severity severity, const char* msg) noexcept override
+    {
+        if (severity != Severity::kINFO)
+            std::cout << "[TRT] " << msg << std::endl;
+    }
+};
+
 class Detector
 {
   public:
@@ -14,7 +33,7 @@ class Detector
     Detector(const std::string &yolo_model_path);
 
     // 析构函数
-    ~Detector() = default;
+    ~Detector();
 
     /*
     主要检测函数:
@@ -22,6 +41,8 @@ class Detector
         输出：装甲板列表        类型：ArmorArray
     */
     ArmorArray detect(const cv::Mat &frame);
+    bool usingTensorRt() const { return is_trt_; }
+    const char *backendName() const { return is_trt_ ? "TensorRT" : "OpenCV-DNN"; }
 
   private:
     // 模块一：预处理
@@ -45,7 +66,6 @@ class Detector
     // 用于强化图像特征（二值化）
     cv::Mat preprocessImage(const cv::Mat &img);
 
-  private:
     cv::dnn::Net yolo_net_;   // YOLO检测网络
     cv::dnn::Net resnet_net_; // ResNet数字识别网络
 
@@ -63,5 +83,26 @@ class Detector
     // 类别名称
     std::vector<std::string> class_names_;
     std::vector<std::string> number_names_;
+
+    // TensorRT
+    bool is_trt_ = false;
+    Logger logger_;
+    nvinfer1::IRuntime* runtime_ = nullptr;
+    nvinfer1::ICudaEngine* engine_ = nullptr;
+    nvinfer1::IExecutionContext* context_ = nullptr;
+    
+    cudaStream_t stream_ = nullptr;
+    std::string input_name_;
+    std::string output_name_;
+    void* device_input_buffer_ = nullptr;
+    void* device_output_buffer_ = nullptr;
+
+    uint8_t* device_src_buffer_=nullptr;
+    size_t  device_src_buffer_size=0;
+    size_t output_size_;
+    std::vector<float> cpu_output_buffer_;
+
+    uint8_t* device_image_buffer_=nullptr;
+    size_t device_image_buffer_size_=0;
 };
 } // namespace armor_task

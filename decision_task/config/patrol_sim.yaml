@@ -1,0 +1,12 @@
+/patrol_sim_node:
+  ros__parameters:
+    nav_namespace: ""
+    waypoints_path: "waypoints.json"
+    decisions_path: "decisions.json"
+    map_path: "RMUL.png"
+    distance_thr: 1.0
+    seek_thr: 5.0
+    real_width: 12.0
+    real_height: 8.0
+    step_distance: 0.1
+    car_seek_fov: 70.0
