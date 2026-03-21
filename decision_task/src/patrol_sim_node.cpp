@@ -28,8 +28,8 @@ public:
         : Node("patrol_sim_node")
     {
         declare_parameter<std::string>("nav_namespace", "");
-        declare_parameter<std::string>("waypoints_path", "waypoints.json");
-        declare_parameter<std::string>("decisions_path", "decisions.json");
+        declare_parameter<std::string>("waypoints_path", "waypoints_test.json");
+        declare_parameter<std::string>("decisions_path", "decisions_test.json");
         declare_parameter<std::string>("map_path", "RMUL.png");
         declare_parameter<float>("distance_thr", 1.0f);
         declare_parameter<float>("seek_thr", 5.0f);

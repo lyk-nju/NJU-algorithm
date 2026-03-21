@@ -225,7 +225,7 @@ int main(int argc, char *argv[])
 
     // 目标切换冷却机制（防止摆头时提前开火）
     std::chrono::steady_clock::time_point last_switch_time = std::chrono::steady_clock::now();
-    const double shoot_cooldown_ms = 250.0; // 目标切换后的开火冷却时间(ms)，可根据云台响应速度调整
+    const double shoot_cooldown_ms = 0.0; // 目标切换后的开火冷却时间(ms)，可根据云台响应速度调整
 
     io::KeyboardManager::print_controls();
     const char *show_env = std::getenv("AUTO_AIMER_SHOW");
@@ -242,7 +242,6 @@ int main(int argc, char *argv[])
     }
 
     io::JudgerData latest_judger_data;
-
     // 启动键盘输入处理线程（保留多线程特性）
     keyboard_manager.start(running);
 
@@ -306,9 +305,10 @@ int main(int argc, char *argv[])
                         io::JudgerData judger_data;
                         if (usb->receive_all(quat, imu_yaw, imu_pitch, judger_data))
                         {
+
                             imu_receive_count++;
 
-                            std::cout << "Receive:" << "x" << quat.x() << " y" << quat.y() << " z" << quat.z() << " w" << quat.w() << " imu_yaw" << imu_yaw << " imu_pitch" << imu_pitch << " game_time: " << judger_data.game_time << " self_hp " << judger_data.self_hp << std::endl;
+                            // std::cout << "Receive:" << "x" << quat.x() << " y" << quat.y() << " z" << quat.z() << " w" << quat.w() << " imu_yaw" << imu_yaw << " imu_pitch" << imu_pitch << " game_time: " << judger_data.game_time << " self_hp " << judger_data.self_hp << " self_id: " << judger_data.self_id << std::endl;
                             // 获取接收时刻的时间戳
                             auto receive_time = std::chrono::steady_clock::now();
                             auto timestamp_ms = std::chrono::duration_cast<std::chrono::milliseconds>(receive_time - program_start_time).count();
@@ -390,13 +390,15 @@ int main(int argc, char *argv[])
                             if (cmd_source.find("auto_aim") == std::string::npos) {
                                 base_cmd.w_yaw = 0.03;
                             }
-                            std::cout << "v_x:" << base_cmd.v_x << "  v_y:" << base_cmd.v_y << "  w_yaw:" << base_cmd.w_yaw << std::endl;
+                            std::cout << "valid:" << cmd_to_send.valid << " shoot" << cmd_to_send.shoot << " v_x:" << base_cmd.v_x << "  v_y:" << base_cmd.v_y << "  w_yaw:" << base_cmd.w_yaw << std::endl;
 
                             usb->send_command(cmd_to_send, base_cmd);
                         }
                         else
                         {
-                            usb->send_command(cmd_to_send);
+                            io::base_Command base_cmd{0.0, 0.0, 0.0}; 
+                            usb->send_command(cmd_to_send, base_cmd);
+                            std::cout << "valid:" << cmd_to_send.valid << " shoot" << cmd_to_send.shoot << " yaw:" << cmd_to_send.yaw << "  pitch:" << cmd_to_send.pitch << std::endl;
                         }
                         last_send_time_thread = now;
                     }
@@ -482,6 +484,7 @@ int main(int argc, char *argv[])
             // step1: 检测阶段
             auto detect_start = std::chrono::steady_clock::now();
             ArmorArray armors = detector.detect(img);
+            // std::cout << "armorsize detect"<< armors.size()<<std::endl;
             auto detect_end = std::chrono::steady_clock::now();
             double detect_time = std::chrono::duration<double, std::milli>(detect_end - detect_start).count();
 
@@ -547,13 +550,27 @@ int main(int argc, char *argv[])
             }
 
             // step3: 追踪阶段（tracker 内部会自动进行 PnP 解算）
+            // 更新敌人颜色
+            {
+                std::lock_guard<std::mutex> lock(imu_mutex);
+                if (has_latest_imu) {
+                    bool self_is_red = tools::get_color_from_self_id(latest_judger_data);
+                    // std::cout << "is red: " << self_is_red << std::endl;
+                    tracker.get_enemy_color(self_is_red);
+                }
+            }
+            
             auto track_start = std::chrono::steady_clock::now();
             std::vector<Target> targets = tracker.track(armors, frame_start);
+            // std::cout << "armorsize track"<< armors.size()<<std::endl;
             auto track_end = std::chrono::steady_clock::now();
             double track_time = std::chrono::duration<double, std::milli>(track_end - track_start).count();
 
+
+
+
             // 调试输出：追踪后的装甲板信息（已经过 PnP 解算）
-                //if (!armors.empty())
+                // if (!armors.empty())
                 // {
                 //     std::cout << "\n=== PnP Results (after tracking) | Frame " << frame_count << " ===" << std::endl;
                 //     for (size_t i = 0; i < armors.size(); ++i)
@@ -635,7 +652,7 @@ int main(int argc, char *argv[])
                     can_shoot = false;
                 }
 
-                auto_cmd.shoot = can_shoot;
+                auto_cmd.shoot = auto_cmd.shoot = auto_cmd.valid;;
 
                 auto aim_end = std::chrono::steady_clock::now();
                 aim_time = std::chrono::duration<double, std::milli>(aim_end - aim_start).count();
@@ -649,12 +666,14 @@ int main(int argc, char *argv[])
                 latest_aim_point.valid = false;
                 latest_aim_point.xyza.setZero();
                 latest_autoaim_time_ms = 0.0;
+                has_last_cmd = false;
             }
 
             {
                 std::lock_guard<std::mutex> lock(imu_mutex);
                 bool cmd_valid = latest_autoaim_cmd.has_value() && latest_autoaim_cmd->valid;
-                ros_node->update_aimer_data(io::AimerData{cmd_valid, latest_judger_data});
+                const io::AimerData aim_result_pub = tools::from_vis_dec(cmd_valid, latest_judger_data);
+                ros_node->update_aimer_data(aim_result_pub);
             }
 
             // 准备显示帧（仅在需要可视化时进行绘制）
@@ -962,14 +981,14 @@ int main(int argc, char *argv[])
             }
 
             // 显示结果
-            if (has_display)
-            {
-                if (should_draw)
-                {
-                    cv::imshow("Auto Aimer Test", display_frame);
-                    cv::pollKey();
-                }
-            }
+            // if (has_display)
+            // {
+            //     if (should_draw)
+            //     {
+                    // cv::imshow("Auto Aimer Test", display_frame);
+                    // cv::pollKey();
+            //     }
+            // }
         }
     }
 
@@ -1010,4 +1029,5 @@ int main(int argc, char *argv[])
 
     // std::cout << "\nAuto aimer test finished." << std::endl;
     return 0;
+
 }

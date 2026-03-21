@@ -10,7 +10,7 @@
 
 namespace armor_task
 {
-Tracker::Tracker(const std::string &config_path, PnpSolver &solver) : solver_{solver}, detect_count_(0), temp_lost_count_(0), state_{"lost"}, pre_state_{"lost"}, last_timestamp_(std::chrono::steady_clock::now())
+Tracker::Tracker(const std::string &config_path, PnpSolver &solver) : solver_{solver}, detect_count_(0), temp_lost_count_(0), state_{"lost"}, pre_state_{"lost"}, last_timestamp_(std::chrono::steady_clock::now()), last_self_is_red_(true)
 {
     auto yaml = YAML::LoadFile(config_path);
     enemy_color_ = (yaml["enemy_color"].as<std::string>() == "red") ? Color::red : Color::blue;
@@ -24,6 +24,26 @@ Tracker::Tracker(const std::string &config_path, PnpSolver &solver) : solver_{so
 
 std::string Tracker::state() const { return state_; }
 
+bool Tracker::get_enemy_color(bool iam_red)
+{
+    if(!init_)
+    {
+        init_ = true;
+        enemy_color_ = iam_red ? Color::blue : Color::red;
+        std::cout << "enemy_color:" << enemy_color_ << std::endl;
+        last_self_is_red_ = iam_red;
+        return true;
+    }
+    if (iam_red != last_self_is_red_ )
+    {
+        enemy_color_ = iam_red ? Color::blue : Color::red;
+        std::cout << "enemy_color:" << enemy_color_ << std::endl;
+        last_self_is_red_ = iam_red;
+        return true;
+    }
+    return false;
+}
+
 std::vector<Target> Tracker::track(std::vector<Armor> &armors, std::chrono::steady_clock::time_point t)
 {
     auto dt = tools::delta_time(t, last_timestamp_);
@@ -35,8 +55,18 @@ std::vector<Target> Tracker::track(std::vector<Armor> &armors, std::chrono::stea
     // }
 
     // 过滤掉非我方装甲板
+    // for (const auto &armor : armors)
+    // {
+    //     std::cout << "Armor1 "  << " color: " << armor.color << " center: (" << armor.center.x << ", " << armor.center.y << ")" << std::endl;
+    // }
     auto it = std::remove_if(armors.begin(), armors.end(), [&](const Armor &a) { return a.color != enemy_color_; });
     armors.erase(it, armors.end());
+
+    // for (const auto &armor : armors)
+    // {
+    //     std::cout << "Armor2 "  << " color: " << armor.color << " center: (" << armor.center.x << ", " << armor.center.y << ")" << std::endl;
+    // }
+
     //std::cout<<"total num of amrmors"<<armors.size()<<std::endl;
     // 过滤前哨站顶部装甲板
     // armors.remove_if([this](const auto_aim::Armor & a) {

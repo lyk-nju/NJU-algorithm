@@ -207,7 +207,6 @@ bool RobotDecisionSys::decodeDecisions(const std::string& filePath)
         decision->robot_mode = item.value("robot_mode", -1);
         decision->_minHP = item.value("minHP", -1);
         decision->_maxHP = item.value("maxHP", -1);
-        decision->decide_mode = item.value("decide_mode", -1);
         decision->decide_wayPoint = item.value("decide_wayPoint", -1);
         decision->out_post_HP_min = item.value("out_post_HP_min", -1);
         decision->base_HP_min = item.value("base_HP_min", -1);
@@ -356,8 +355,6 @@ std::shared_ptr<Decision> RobotDecisionSys::decide(int wayPointID, int robot_mod
             decision->if_auto = false;
         }
     }
-    if (decision != nullptr && decision->decide_mode == -1)
-        decision->decide_mode = decision->robot_mode;
     if (decision != nullptr && decision->decide_wayPoint == -1)
         decision->decide_wayPoint = wayPointID;
     return decision;

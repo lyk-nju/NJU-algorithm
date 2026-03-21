@@ -40,10 +40,16 @@ ros2 launch decision patrol.launch.py
 /home/nvidia/NJU-algorithm/decision_task/build/decision/patrol_node --ros-args --params-file /home/nvidia/NJU-algorithm/decision_task/config/patrol.yaml
 ```
 
-### 3. simple_decision_node (完整决策系统)
+### 3. decision_node (哨兵完整决策系统)
 
 ```bash
-ros2 launch decision simple_decision.launch.py
+ros2 launch decision decision.launch.py
+```
+
+或直接运行：
+
+```bash
+ros2 run decision decision_node --ros-args --params-file /home/nvidia/NJU-algorithm/decision_task/config/decision.yaml
 ```
 
 ## 配置文件说明
@@ -75,6 +81,22 @@ ros2 launch decision simple_decision.launch.py
     step_distance: 0.1
     car_seek_fov: 70.0
     use_pure_patrol: true
+```
+
+### decision.yaml (哨兵决策系统)
+```yaml
+/decision_node:
+  ros__parameters:
+    nav_namespace: ""
+    waypoints_path: "waypoints.json"     # 路径点文件
+    decisions_path: "decisions.json"     # 决策文件
+    map_path: "RMUL.png"
+    distance_thr: 1.0
+    seek_thr: 5.0
+    real_width: 12.0
+    real_height: 8.0
+    step_distance: 0.1
+    car_seek_fov: 70.0
 ```
 
 ### 配置文件格式说明

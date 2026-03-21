@@ -53,7 +53,6 @@ struct Decision
     int base_HP_min = -1;
     std::vector<std::vector<int>> enemy_position;
     std::vector<std::vector<int>> friend_position;
-    int decide_mode = -1;
     int decide_wayPoint = -1;
     bool if_succession = false;
     bool if_reverse = true;

@@ -25,17 +25,17 @@ endif()
 
 include_directories(include)
 
-add_executable(simple_decision_node
-  src/simple_decision_node.cpp
+add_executable(decision_node
+  src/decision_node.cpp
   src/robot_decision.cpp
 )
 
-target_include_directories(simple_decision_node PUBLIC
+target_include_directories(decision_node PUBLIC
   $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
   $<INSTALL_INTERFACE:include>
 )
 
-ament_target_dependencies(simple_decision_node
+ament_target_dependencies(decision_node
   rclcpp
   rclcpp_action
   action_msgs
@@ -46,11 +46,11 @@ ament_target_dependencies(simple_decision_node
   tf2_geometry_msgs
 )
 
-target_link_libraries(simple_decision_node
+target_link_libraries(decision_node
   ${OpenCV_LIBS}
 )
 
-target_link_libraries(simple_decision_node nlohmann_json::nlohmann_json)
+target_link_libraries(decision_node nlohmann_json::nlohmann_json)
 
 # Pose Initializer Node
 add_executable(pose_initializer_node
@@ -108,7 +108,7 @@ target_link_libraries(patrol_sim_node
 )
 
 install(TARGETS
-  simple_decision_node
+  decision_node
   pose_initializer_node
   patrol_node
   patrol_sim_node

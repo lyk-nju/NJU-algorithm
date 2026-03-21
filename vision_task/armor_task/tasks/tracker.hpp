@@ -22,10 +22,14 @@ class Tracker
 
     std::vector<Target> track(std::vector<Armor> &armors, std::chrono::steady_clock::time_point t);
 
+    bool get_enemy_color(bool iam_red);
+
 
   private:
     PnpSolver &solver_;
     Color enemy_color_;
+    bool init_ = false;
+    bool last_self_is_red_;
     int min_detect_count_;
     int max_temp_lost_count_;
     int detect_count_;

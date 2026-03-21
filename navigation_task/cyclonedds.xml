@@ -1,0 +1,18 @@
+<?xml version="1.0" ?>
+<cyclonedds xmlns="https://www.cyclonedds.com/qos" domain_id="42">
+  <domain>
+    <participant name="ROS2">
+      <discovery>
+        <peers>
+          <peer address="192.168.43.18" />
+        </peers>
+        <participant_index>auto</participant_index>
+      </discovery>
+      <transport_builtin>
+        <udpv4>
+          <port>7400</port>
+        </udpv4>
+      </transport_builtin>
+    </participant>
+  </domain>
+</cyclonedds>

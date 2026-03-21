@@ -1,4 +1,0 @@
-1. 背景：目前 navigation_task在rviz中通过2D goal pose及 2D pose estimate可以正常运行并可以通过视觉模块正常控制哨兵的路径控制规划和运行。
-2. 目的：为了实现全自动哨兵，我们需要写一个发布初始化2D pose estimate的脚本，其初始化点位需要通过一个config.yaml这种非常容易修改的脚本确定
-    其次，我们需要完成一个程序，参考decision_task来实例化一个robot_decision.cpp测试其是否能正常驱动小车的动作到达某个位置，请你为这个脚本也写一个简单的config.yaml这种非常容易修改的脚本确定其目标位置(x,y)
-3. 人物：你的任务是完成初始化2D pose estimate的程序及实例化一个robot_decision.cpp测试其是否能正常驱动小车的动作到达某个位置的程序

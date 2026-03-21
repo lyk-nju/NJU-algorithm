@@ -5,9 +5,8 @@
 
 namespace tools
 {
-
-// 将 /cmd_vel (geometry_msgs::msg::Twist) 转成用于串口下发的 base_Command
     io::base_Command from_cmd_vel(const geometry_msgs::msg::Twist &twist);
-
+    io::AimerData from_vis_dec(bool vallid, io::JudgerData &judger_data);
+    bool get_color_from_self_id(io::JudgerData judger_data);
 } // namespace tools
 
