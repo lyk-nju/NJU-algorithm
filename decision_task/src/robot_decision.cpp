@@ -38,12 +38,15 @@ std::vector<std::shared_ptr<WayPoint>> RobotDecisionSys::calculatePath(int start
     std::map<int, bool> waypoint_flag;
     waypoint_flag[startWayPointID] = true;
     bool flag = true;
-    while (flag)
+    while (flag && !container.empty())
     {
         int current_waypoint = container.back();
         auto iter = connection_map.find(current_waypoint);
         if (iter == connection_map.end())
-            break;
+        {
+            container.pop_back();
+            continue;
+        }
         bool flag2 = false;
         for (int next_id : iter->second)
         {
@@ -61,6 +64,9 @@ std::vector<std::shared_ptr<WayPoint>> RobotDecisionSys::calculatePath(int start
         if (waypoint_flag.size() >= wayPointMap.size())
             break;
     }
+    if (container.empty())
+        return result;
+
     for (size_t i = 1; i < container.size(); ++i)
         result.push_back(getWayPointByID(container[i]));
     return result;

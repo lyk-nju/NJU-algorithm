@@ -2,7 +2,7 @@
   ros__parameters:
     nav_namespace: ""
     initial_pose:
-      x: -2.0
-      y: -3.0
+      x: -1.5
+      y: -2.5
       theta: 0.0
     delay: 1.0

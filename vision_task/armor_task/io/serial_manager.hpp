@@ -8,6 +8,9 @@
 
 namespace io
 {
+
+std::string check_port();
+
 struct Command
 {
     bool valid = false; // 指令是否有效
@@ -54,6 +57,7 @@ class USB
     struct termios receive_tty;
 
   public:
+    
     USB(const std::string &send_port, const std::string &receive_port);
     ~USB();
 

@@ -8,7 +8,7 @@
 
 namespace armor_task
 {
-Detector::Detector(const std::string &yolo_model_path) : input_width_(640), input_height_(640), confidence_threshold_(0.10f), nms_threshold_(0.5f), scale_(1.0f), pad_x_(0.0f), pad_y_(0.0f)
+Detector::Detector(const std::string &yolo_model_path) : input_width_(640), input_height_(640), confidence_threshold_(0.4f), nms_threshold_(0.5f), scale_(1.0f), pad_x_(0.0f), pad_y_(0.0f)
 {
     // 初始化类别名称 - 36个装甲板类别
     class_names_.resize(36);
@@ -534,6 +534,17 @@ ArmorArray Detector::search_armors(const cv::Mat &frame, const cv::Mat &input_bl
         
         detected_armors.push_back(armor);
     }
+
+    // if (!detected_armors.empty()) {
+    //     std::cout << "[Detector] Detected " << detected_armors.size() << " armor(s)" << std::endl;
+    //     for (const auto& armor : detected_armors) {
+    //         std::string color_str = (armor.color == blue) ? "blue" : (armor.color == red) ? "red" : "purple";
+    //         std::cout << "  - Detect ID: " << armor.detect_id 
+    //                   << ", Car Num: " << armor.car_num
+    //                   << ", Color: " << color_str
+    //                   << ", Confidence: " << armor.confidence << std::endl;
+    //     }
+    // }
 
     return detected_armors;
 }

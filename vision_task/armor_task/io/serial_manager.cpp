@@ -1,7 +1,9 @@
 #include "serial_manager.hpp"
 #include <Eigen/Dense>
+#include <cstdio>
 #include <cerrno>
 #include <cstring>
+#include <filesystem>
 #include <fcntl.h>
 #include <iostream>
 #include <sstream>
@@ -12,6 +14,19 @@
 
 namespace io
 {
+std::string check_port()
+{
+    const char *candidates[] = {"/dev/ttyACM0", "/dev/ttyACM1","/dev/ttyACM2", "/dev/ttyACM3"};
+    for (const char *candidate : candidates)
+    {
+        if (std::filesystem::exists(candidate) && std::filesystem::is_character_file(candidate))
+        {
+            return candidate;
+        }
+    }
+
+    return "/dev/ttyACM0";
+}
 USB::USB(const std::string &send_port, const std::string &receive_port)
 {
     // Initialize send port

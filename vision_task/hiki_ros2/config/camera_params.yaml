@@ -2,9 +2,9 @@
   ros__parameters:
     camera_name: narrow_stereo
 
-    exposure_time: 2000
+    exposure_time: 10000
     exposure_auto: 0  # 0=Off, 1=Once, 2=Continuous
-    gain: 16.9
+    gain: 21.0
     balance_white_auto: 0  # 0=Off(关闭), 1=Continuous(连续), 2=Once(一次)
     sdk_image_node_num: 3
     acquisition_frame_rate: 0.0  # <=0 means no SDK frame-rate cap

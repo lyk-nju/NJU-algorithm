@@ -9,9 +9,9 @@
       "end_time": -1,
       "robot_mode": -1,
       "minHP": -1,
-      "maxHP": 40,
+      "maxHP": 90,
       "decide_wayPoint": 1,
-      "if_succession": true
+      "if_succession": false
     },
     {
       "id": 1,
@@ -37,7 +37,7 @@
       "minHP": 81,
       "maxHP": -1,
       "decide_wayPoint": 5,
-      "if_succession": true
+      "if_succession": false
     }
   ]
 }

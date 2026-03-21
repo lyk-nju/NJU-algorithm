@@ -186,14 +186,23 @@ int main(int argc, char *argv[])
     std::thread spin_thread([&]() { rclcpp::spin(ros_node); });
 
     // 2、配置串口通信
-    io::USB *usb = nullptr;
-    try
+    std::unique_ptr<io::USB> usb;
+    std::string correct_port = io::check_port();
+    if (correct_port.empty())
     {
-        usb = new io::USB(send_port, receive_port);
+        std::cout << "Warning: No /dev/ttyACM0 or /dev/ttyACM1 found, continuing without communication" << std::endl;
     }
-    catch (...)
+    else
     {
-        std::cout << "Warning: Communication not available, continuing without it" << std::endl;
+        std::cout << "Using serial port: " << correct_port << std::endl;
+        try
+        {
+            usb = std::make_unique<io::USB>(correct_port, correct_port);
+        }
+        catch (const std::exception &e)
+        {
+            std::cout << "Warning: Communication not available, continuing without it: " << e.what() << std::endl;
+        }
     }
 
     // 3、初始化键盘管理器（多线程处理键盘输入）
@@ -285,7 +294,7 @@ int main(int argc, char *argv[])
     Eigen::Quaterniond imu_quat(1.0, 0.0, 0.0, 0.0);
     std::thread imu_thread;
     std::thread send_thread;
-    if (usb != nullptr)
+    if (usb)
     {
         imu_thread = std::thread(
             [&]()
@@ -484,18 +493,23 @@ int main(int argc, char *argv[])
             // step1: 检测阶段
             auto detect_start = std::chrono::steady_clock::now();
             ArmorArray armors = detector.detect(img);
-            // std::cout << "armorsize detect"<< armors.size()<<std::endl;
+            std::cout << "armorsize detect"<< armors.size()<<std::endl;
             auto detect_end = std::chrono::steady_clock::now();
             double detect_time = std::chrono::duration<double, std::milli>(detect_end - detect_start).count();
+            for (const auto &armor : armors)
+            {
+                std::cout << "Confidence" << armor.confidence << std::endl; 
+            }
 
             // step2: 更新云台到世界坐标系的旋转矩阵（从IMU历史缓冲查询）
+
             static Eigen::Quaterniond last_quat(1.0, 0.0, 0.0, 0.0);
             static int quat_update_count = 0;
             static int debug_frame_count = 0;
             static auto last_imu_stats_time = std::chrono::steady_clock::now();
             static int imu_updates_in_period = 0;
 
-            if (usb != nullptr)
+            if (usb)
             {
                 Eigen::Quaterniond synced_quat;
                 double synced_yaw, synced_pitch;
@@ -504,7 +518,7 @@ int main(int argc, char *argv[])
                 if (imu_history.query(estimated_exposure_time, synced_quat, synced_yaw, synced_pitch))
                 {
                     // 计算四元数变化量（用于调试）
-                    double quat_diff = (synced_quat.coeffs() - last_quat.coeffs()).norm();
+                    // double quat_diff = (synced_quat.coeffs() - last_quat.coeffs()).norm();
 
                     pnp_solver.set_R_gimbal2world(synced_quat);
                     last_quat = synced_quat;
@@ -563,6 +577,7 @@ int main(int argc, char *argv[])
             auto track_start = std::chrono::steady_clock::now();
             std::vector<Target> targets = tracker.track(armors, frame_start);
             // std::cout << "armorsize track"<< armors.size()<<std::endl;
+
             auto track_end = std::chrono::steady_clock::now();
             double track_time = std::chrono::duration<double, std::milli>(track_end - track_start).count();
 
@@ -652,7 +667,7 @@ int main(int argc, char *argv[])
                     can_shoot = false;
                 }
 
-                auto_cmd.shoot = auto_cmd.shoot = auto_cmd.valid;;
+                auto_cmd.shoot = auto_cmd.valid;
 
                 auto aim_end = std::chrono::steady_clock::now();
                 aim_time = std::chrono::duration<double, std::milli>(aim_end - aim_start).count();
@@ -985,10 +1000,12 @@ int main(int argc, char *argv[])
             // {
             //     if (should_draw)
             //     {
-                    // cv::imshow("Auto Aimer Test", display_frame);
-                    // cv::pollKey();
+            //         cv::imshow("Auto Aimer Test", display_frame);
+            //         cv::pollKey();
             //     }
             // }
+            // cv::imshow("Auto Aimer Test", display_frame);
+            // cv::pollKey();
         }
     }
 
@@ -1003,7 +1020,7 @@ int main(int argc, char *argv[])
 
     if (usb)
     {
-        delete usb;
+        usb.reset();
     }
 
     if (imu_thread.joinable())
