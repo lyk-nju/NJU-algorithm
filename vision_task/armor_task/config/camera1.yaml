@@ -25,8 +25,8 @@ min_detect_count: 5
 max_temp_lost_count: 15
 
 #####-----弹道参数-----#####
-yaw_offset: 5  #需要实际标定，单位为°
-pitch_offset: 1   #需要实际标定，单位为°
+yaw_offset: 1.0  #需要实际标定，单位为°
+pitch_offset: -1.0   #需要实际标定，单位为°
 comming_angle: 60.0 #来弹角度，单位为°
 leaving_angle: 10.0 #去弹角度，单位为°
 high_speed_delay_time: 0.1275 #高速时延时，单位为s
