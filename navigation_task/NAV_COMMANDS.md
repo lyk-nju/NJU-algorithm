@@ -20,11 +20,21 @@ ros2 launch rm_nav_bringup bringup_real.launch.py world:=my_lab_world mode:=mapp
 - Panels → Add New Panel → slam_toolbox → SlamToolboxPlugin
 - Save Map & Serialize Map
 
+将pgm文件下载到PC端
+gimp map.pgm
+
+同时重命名.pgm、.data、.poesgraph、.yaml，并且修改yaml里面的 image:文件名
+
+
+
 ## 导航模式 (Localization)
 
 ```bash
+cd /home/nvidia/NJU-algorithm/navigation_task
 source install/setup.bash
-ros2 launch rm_nav_bringup bringup_real.launch.py world:=my_lab_map mode:=nav lio:=fastlio localization:=amcl lio_rviz:=False nav_rviz:=False
+ros2 launch rm_nav_bringup bringup_real.launch.py world:=new_map mode:=nav lio:=fastlio localization:=slam_toolbox lio_rviz:=False nav_rviz:=False
+```
+ros2 launch rm_nav_bringup bringup_real.launch.py world:=new_map mode:=nav lio:=fastlio localization:=amcl lio_rviz:=False nav_rviz:=False
 ```
 
 ## 模拟器模式

@@ -1,4 +1,5 @@
 #include <algorithm>
+#include <array>
 #include <chrono>
 #include <cmath>
 #include <fstream>
@@ -154,9 +155,20 @@ class SimpleDecisionNode : public rclcpp::Node
 
         // 创建位置自检定时器，每 1 秒执行一次
         position_check_threshold_ = this->declare_parameter<float>("position_check_threshold", 1.0f);
+        position_check_activation_radius_ = this->declare_parameter<float>(
+            "position_check_activation_radius", std::max(3.0f, position_check_threshold_ * 3.0f));
+        if (position_check_activation_radius_ <= 0.0f)
+        {
+            position_check_activation_radius_ = std::max(3.0f, position_check_threshold_ * 3.0f);
+            RCLCPP_WARN(this->get_logger(),
+                "Invalid position_check_activation_radius, fallback to %.2f",
+                position_check_activation_radius_);
+        }
         position_check_timer_ = this->create_wall_timer(
             1s, std::bind(&SimpleDecisionNode::positionCheckTimerCallback, this));
-        RCLCPP_INFO(this->get_logger(), "Position check timer created (threshold=%.2f).", position_check_threshold_);
+        RCLCPP_INFO(this->get_logger(),
+            "Position check timer created (threshold=%.2f, activation_radius=%.2f).",
+            position_check_threshold_, position_check_activation_radius_);
     }
 
   private:
@@ -178,6 +190,8 @@ class SimpleDecisionNode : public rclcpp::Node
     std::mutex nav_status_mutex_;
     NavigateThroughPoses::Impl::FeedbackMessage::SharedPtr latest_nav_feedback_;
     int8_t goal_status_{action_msgs::msg::GoalStatus::STATUS_UNKNOWN};
+    std::array<uint8_t, 16> active_goal_uuid_{};
+    bool has_active_goal_uuid_{false};
     int last_sent_target_waypoint_{-1};
     int last_known_waypoint_id_{-1};
     int saved_target_waypoint_{-1};
@@ -199,6 +213,7 @@ class SimpleDecisionNode : public rclcpp::Node
     // 位置自检定时器
     rclcpp::TimerBase::SharedPtr position_check_timer_;
     float position_check_threshold_{1.0f};
+    float position_check_activation_radius_{3.0f};
     int center_waypoint_id_{5};
 
     bool isLowHp(int hp) const
@@ -316,11 +331,48 @@ class SimpleDecisionNode : public rclcpp::Node
     {
         if (msg->status_list.empty())
             return;
+
         std::lock_guard<std::mutex> lock(nav_status_mutex_);
+
+        // 只跟踪当前活动goal_id，避免误读旧目标状态
+        if (has_active_goal_uuid_)
+        {
+            const action_msgs::msg::GoalStatus* matched = nullptr;
+            for (const auto& st : msg->status_list)
+            {
+                if (st.goal_info.goal_id.uuid == active_goal_uuid_)
+                {
+                    matched = &st;
+                    break;
+                }
+            }
+
+            if (!matched)
+            {
+                return;
+            }
+
+            int8_t old_status = goal_status_;
+            goal_status_ = matched->status;
+            RCLCPP_INFO(this->get_logger(),
+                "[NavStatus] goal_status changed(by goal_id): %d -> %d (last_sent_target=%d, saved_target=%d, has_saved=%d)",
+                old_status, goal_status_, last_sent_target_waypoint_, saved_target_waypoint_, has_saved_goal_);
+
+            // 终态后清空当前goal_id，等待下一次发送重新绑定
+            if (goal_status_ == action_msgs::msg::GoalStatus::STATUS_SUCCEEDED ||
+                goal_status_ == action_msgs::msg::GoalStatus::STATUS_ABORTED ||
+                goal_status_ == action_msgs::msg::GoalStatus::STATUS_CANCELED)
+            {
+                has_active_goal_uuid_ = false;
+            }
+            return;
+        }
+
+        // 兼容：尚未拿到活动goal_id时，退化为旧逻辑
         int8_t old_status = goal_status_;
         goal_status_ = msg->status_list.back().status;
         RCLCPP_INFO(this->get_logger(), 
-            "[NavStatus] goal_status changed: %d -> %d (last_sent_target=%d, saved_target=%d, has_saved=%d)",
+            "[NavStatus] goal_status changed(fallback back): %d -> %d (last_sent_target=%d, saved_target=%d, has_saved=%d)",
             old_status, goal_status_, last_sent_target_waypoint_, saved_target_waypoint_, has_saved_goal_);
     }
 
@@ -574,6 +626,30 @@ class SimpleDecisionNode : public rclcpp::Node
             last_sent_target_waypoint_);
 
         auto send_goal_options = typename rclcpp_action::Client<NavigateThroughPoses>::SendGoalOptions();
+
+        send_goal_options.goal_response_callback =
+            [this](const GoalHandleNav::SharedPtr goal_handle)
+            {
+                if (!goal_handle)
+                {
+                    RCLCPP_WARN(this->get_logger(), "[SendNavGoal] Goal rejected by nav2");
+                    return;
+                }
+
+                std::lock_guard<std::mutex> lock(nav_status_mutex_);
+                active_goal_uuid_ = goal_handle->get_goal_id();
+                has_active_goal_uuid_ = true;
+                goal_status_ = action_msgs::msg::GoalStatus::STATUS_ACCEPTED;
+                RCLCPP_INFO(this->get_logger(), "[SendNavGoal] Goal accepted, bind goal_id for status tracking");
+            };
+
+        {
+            std::lock_guard<std::mutex> lock(nav_status_mutex_);
+            // 新目标发出前先清空旧goal_id绑定，避免误匹配旧状态
+            has_active_goal_uuid_ = false;
+            goal_status_ = action_msgs::msg::GoalStatus::STATUS_UNKNOWN;
+        }
+
         nav_client_->async_send_goal(goal_msg, send_goal_options);
         RCLCPP_INFO(this->get_logger(), "[SendNavGoal] EXIT: goal sent successfully");
         return true;
@@ -601,6 +677,11 @@ class SimpleDecisionNode : public rclcpp::Node
         RCLCPP_INFO(this->get_logger(), "[CancelNavGoal] Sending cancel request...");
         nav_client_->async_cancel_all_goals();
         last_sent_target_waypoint_ = -1;
+        {
+            std::lock_guard<std::mutex> lock(nav_status_mutex_);
+            has_active_goal_uuid_ = false;
+            goal_status_ = action_msgs::msg::GoalStatus::STATUS_CANCELED;
+        }
         RCLCPP_INFO(this->get_logger(), "[CancelNavGoal] Done. last_sent_target_ set to -1");
     }
 
@@ -751,7 +832,7 @@ class SimpleDecisionNode : public rclcpp::Node
         }
 
         // 仅在“足够靠近关键点”时做闭环校正，避免误吸附
-        if (dist_to_key > position_check_threshold_ * 3.0f)
+        if (dist_to_key > position_check_activation_radius_)
             return;
 
         // 偏离超过阈值，发送校正目标

@@ -48,6 +48,7 @@ public:
 
     MV_CC_OpenDevice(camera_handle_);
     MV_CC_SetTriggerMode(camera_handle_, 0);
+    configureAdcBitDepth();
     configureSdkStream();
     applyBinning();
 
@@ -160,8 +161,10 @@ public:
           if (publish_camera_info_) {
             camera_info_msg_.header = image_msg_.header;
             camera_pub_.publish(image_msg_, camera_info_msg_);
+      
           } else {
             image_pub_->publish(image_msg_);
+      
           }
           auto publish_end = std::chrono::steady_clock::now();
 
@@ -194,6 +197,7 @@ public:
           fail_conut_ = 0;
         } else {
           RCLCPP_WARN(this->get_logger(), "Get buffer failed! nRet: [%x]", nRet);
+          std::this_thread::sleep_for(std::chrono::milliseconds(500));
           MV_CC_StopGrabbing(camera_handle_);
           MV_CC_StartGrabbing(camera_handle_);
           fail_conut_++;
@@ -259,6 +263,34 @@ private:
         RCLCPP_WARN(this->get_logger(), "Failed to set AcquisitionFrameRate, nRet: [%x]", nRet);
       }
     }
+  }
+
+  void configureAdcBitDepth()
+  {
+    static constexpr const char * kAdcKeys[] = {"ADCBitDepth", "ADCBitsDepth"};
+    static constexpr const char * kAdc8BitValues[] = {"ADCBitDepth_8", "ADCBitsDepth_8"};
+
+    for (const char * key : kAdcKeys) {
+      MVCC_ENUMVALUE enum_value;
+      std::memset(&enum_value, 0, sizeof(enum_value));
+      nRet = MV_CC_GetEnumValue(camera_handle_, key, &enum_value);
+      if (nRet != MV_OK) {
+        continue;
+      }
+
+      for (const char * value : kAdc8BitValues) {
+        nRet = MV_CC_SetEnumValueByString(camera_handle_, key, value);
+        if (nRet == MV_OK) {
+          RCLCPP_INFO(this->get_logger(), "%s configured to 8-bit ADC.", key);
+          return;
+        }
+      }
+
+      RCLCPP_WARN(this->get_logger(), "Failed to set %s to 8-bit ADC, nRet: [%x]", key, nRet);
+      return;
+    }
+
+    RCLCPP_WARN(this->get_logger(), "Camera does not expose an ADC bit-depth enum node.");
   }
 
   int setBinningAxis(const char * key, int requested)

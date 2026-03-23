@@ -10,8 +10,13 @@
     real_height: 8.0
     step_distance: 0.1
     car_seek_fov: 70.0
-    position_check_threshold: 1.0
+    home_waypoint_id: 1
+    center_waypoint_id: 5
+    position_check_threshold: 0.5
+    position_check_activation_radius: 8.0
+    recovery_hp_threshold: 80
+    low_hp_return_threshold: 80
     initial_pose:
-      x: -1.5
-      y: -2.5
+      x: 0.0
+      y: 0.0
       theta: 0.0

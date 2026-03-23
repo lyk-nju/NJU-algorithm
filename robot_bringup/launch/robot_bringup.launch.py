@@ -15,7 +15,7 @@ def generate_launch_description():
     nav_launch = IncludeLaunchDescription(
         PythonLaunchDescriptionSource(nav_launch_path),
         launch_arguments={
-            'world': 'my_lab_map',
+            'world': 'new_map',
             'mode': 'nav',
             'lio': 'fastlio',
             'localization': 'amcl',
@@ -49,6 +49,6 @@ def generate_launch_description():
         camera_launch,
         TimerAction(
             actions=[decision_launch],
-            period=0.0
+            period=3.0
         )
     ])

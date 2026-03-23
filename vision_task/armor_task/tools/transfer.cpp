@@ -8,8 +8,8 @@ io::base_Command from_cmd_vel(const geometry_msgs::msg::Twist &twist)
     io::base_Command cmd;
 
     // v_x, v_y
-    cmd.v_x = 0.8 * twist.linear.x;
-    cmd.v_y = 0.8 * twist.linear.y;
+    cmd.v_x = 0.5 * twist.linear.x;
+    cmd.v_y = 0.5 * twist.linear.y;
     cmd.w_yaw = 0.0 * twist.angular.z;
 
     return cmd;
