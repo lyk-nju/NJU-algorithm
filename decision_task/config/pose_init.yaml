@@ -5,4 +5,6 @@
       x: -6.2
       y: -0.33
       theta: -0.08
-    delay: 1.0
+    delay: 8.0
+    publish_count: 5
+    publish_interval: 0.4

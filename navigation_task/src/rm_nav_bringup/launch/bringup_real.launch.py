@@ -187,7 +187,11 @@ def generate_launch_description():
             'range_min': 0.45,
             'range_max': 10.0,
             'use_inf': True,
-            'inf_epsilon': 1.0
+            'inf_epsilon': 1.0,
+            'qos_overrides./scan.publisher.reliability': 'reliable',
+            'qos_overrides./scan.publisher.durability': 'volatile',
+            'qos_overrides./scan.publisher.history': 'keep_last',
+            'qos_overrides./scan.publisher.depth': 10
         }],
         name='pointcloud_to_laserscan'
     )

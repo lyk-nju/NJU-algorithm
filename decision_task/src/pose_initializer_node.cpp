@@ -1,3 +1,4 @@
+#include <algorithm>
 #include <memory>
 #include <string>
 
@@ -19,6 +20,8 @@ public:
         declare_parameter<double>("initial_pose.y", 0.0);
         declare_parameter<double>("initial_pose.theta", 0.0);
         declare_parameter<double>("delay", 1.0);
+        declare_parameter<int>("publish_count", 1);
+        declare_parameter<double>("publish_interval", 0.5);
 
         std::string nav_ns = get_parameter("nav_namespace").as_string();
         if (!nav_ns.empty() && nav_ns.front() != '/')
@@ -34,35 +37,71 @@ public:
             initial_pose_topic, rclcpp::QoS(rclcpp::KeepLast(10)));
 
         double delay = get_parameter("delay").as_double();
+        publish_count_ = std::max(1, static_cast<int>(get_parameter("publish_count").as_int()));
+        publish_interval_ = get_parameter("publish_interval").as_double();
+        if (publish_interval_ <= 0.0)
+        {
+            publish_interval_ = 0.5;
+        }
 
         auto timer_callback = [this, delay]() {
+            start_timer_->cancel();
             publishInitialPose();
+
+            ++published_count_;
+            if (published_count_ >= publish_count_)
+            {
+                has_published_ = true;
+                return;
+            }
+
+            publish_timer_ = this->create_wall_timer(
+                std::chrono::duration<double>(publish_interval_),
+                [this]() {
+                    if (published_count_ >= publish_count_)
+                    {
+                        publish_timer_->cancel();
+                        has_published_ = true;
+                        return;
+                    }
+
+                    publishInitialPose();
+                    ++published_count_;
+
+                    if (published_count_ >= publish_count_)
+                    {
+                        publish_timer_->cancel();
+                        has_published_ = true;
+                    }
+                });
         };
 
-        timer_ = this->create_wall_timer(
+        start_timer_ = this->create_wall_timer(
             std::chrono::duration<double>(delay),
             timer_callback);
+
+        RCLCPP_INFO(this->get_logger(),
+            "Initial pose will be published %d times after %.2fs delay (interval=%.2fs)",
+            publish_count_, delay, publish_interval_);
     }
 
 private:
     rclcpp::Publisher<geometry_msgs::msg::PoseWithCovarianceStamped>::SharedPtr pose_pub_;
-    rclcpp::TimerBase::SharedPtr timer_;
+    rclcpp::TimerBase::SharedPtr start_timer_;
+    rclcpp::TimerBase::SharedPtr publish_timer_;
     bool has_published_ = false;
+    int publish_count_ = 1;
+    int published_count_ = 0;
+    double publish_interval_ = 0.5;
 
     void publishInitialPose()
     {
-        if (has_published_)
-        {
-            timer_->cancel();
-            return;
-        }
-
         double x = get_parameter("initial_pose.x").as_double();
         double y = get_parameter("initial_pose.y").as_double();
         double theta = get_parameter("initial_pose.theta").as_double();
 
         geometry_msgs::msg::PoseWithCovarianceStamped pose_msg;
-        pose_msg.header.stamp = this->now();
+        pose_msg.header.stamp = rclcpp::Time(0, 0, RCL_ROS_TIME);
         pose_msg.header.frame_id = "map";
 
         pose_msg.pose.pose.position.x = x;
@@ -82,10 +121,8 @@ private:
 
         pose_pub_->publish(pose_msg);
 
-        RCLCPP_INFO(this->get_logger(), "Published initial pose: x=%.2f, y=%.2f, theta=%.2f",
-                    x, y, theta);
-
-        has_published_ = true;
+        RCLCPP_INFO(this->get_logger(), "Published initial pose [%d/%d]: x=%.2f, y=%.2f, theta=%.2f",
+                    published_count_ + 1, publish_count_, x, y, theta);
     }
 };
 

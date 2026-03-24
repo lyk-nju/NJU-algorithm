@@ -12,6 +12,7 @@
 #include "rclcpp_action/rclcpp_action.hpp"
 
 #include "action_msgs/msg/goal_status_array.hpp"
+#include "geometry_msgs/msg/pose_with_covariance_stamped.hpp"
 #include "geometry_msgs/msg/pose_stamped.hpp"
 #include "std_msgs/msg/float32_multi_array.hpp"
 #include "nav2_msgs/action/navigate_through_poses.hpp"
@@ -20,6 +21,7 @@
 #include "decision/robot_decision.hpp"
 
 #include <tf2/LinearMath/Quaternion.h>
+#include <tf2/utils.h>
 #include <tf2_geometry_msgs/tf2_geometry_msgs.hpp>
 
 using namespace std::chrono_literals;
@@ -44,6 +46,8 @@ class SimpleDecisionNode : public rclcpp::Node
         const std::string nav_action = nav_ns + "/navigate_through_poses";
         const std::string nav_feedback = nav_action + "/_action/feedback";
         const std::string nav_status = nav_action + "/_action/status";
+        const std::string initial_pose_topic = nav_ns + "/initialpose";
+        const std::string amcl_pose_topic = nav_ns + "/amcl_pose";
 
         // 订阅自瞄 + judge 数据（Decision 不再向 Vision 发送自瞄相关话题）
         auto qos = rclcpp::QoS(rclcpp::KeepLast(10));
@@ -60,6 +64,11 @@ class SimpleDecisionNode : public rclcpp::Node
         nav_status_sub_ = this->create_subscription<action_msgs::msg::GoalStatusArray>(
             nav_status, qos,
             std::bind(&SimpleDecisionNode::nav2GoalStatusCallback, this, std::placeholders::_1));
+        amcl_pose_sub_ = this->create_subscription<geometry_msgs::msg::PoseWithCovarianceStamped>(
+            amcl_pose_topic, qos,
+            std::bind(&SimpleDecisionNode::amclPoseCallback, this, std::placeholders::_1));
+        initialpose_pub_ = this->create_publisher<geometry_msgs::msg::PoseWithCovarianceStamped>(
+            initial_pose_topic, rclcpp::QoS(rclcpp::KeepLast(10)));
 
         // 简化：立即等待一次 action server（失败也不退出，仅打印）
         if (!nav_client_->wait_for_action_server(5s))
@@ -82,6 +91,13 @@ class SimpleDecisionNode : public rclcpp::Node
         center_waypoint_id_ = this->declare_parameter<int>("center_waypoint_id", 5);
         recovery_hp_threshold_ = this->declare_parameter<int>("recovery_hp_threshold", 80);
         low_hp_return_threshold_ = this->declare_parameter<int>("low_hp_return_threshold", recovery_hp_threshold_);
+        require_amcl_ready_before_nav_ = this->declare_parameter<bool>("require_amcl_ready_before_nav", true);
+        amcl_pose_timeout_sec_ = this->declare_parameter<double>("amcl_pose_timeout_sec", 1.5);
+        amcl_pose_min_samples_ = this->declare_parameter<int>("amcl_pose_min_samples", 3);
+        aborted_reinit_threshold_ = this->declare_parameter<int>("aborted_reinit_threshold", 3);
+        aborted_reinit_cooldown_sec_ = this->declare_parameter<double>("aborted_reinit_cooldown_sec", 2.0);
+        last_good_pose_max_age_sec_ = this->declare_parameter<double>("last_good_pose_max_age_sec", 8.0);
+        enable_aborted_reinit_ = this->declare_parameter<bool>("enable_aborted_reinit", true);
 
         // 初始位置参数（当没有Nav2反馈时使用）
         this->declare_parameter<float>("initial_pose.x", 1.5f);
@@ -169,6 +185,12 @@ class SimpleDecisionNode : public rclcpp::Node
         RCLCPP_INFO(this->get_logger(),
             "Position check timer created (threshold=%.2f, activation_radius=%.2f).",
             position_check_threshold_, position_check_activation_radius_);
+        RCLCPP_INFO(this->get_logger(),
+            "ABORTED reinit: enable=%d, threshold=%d, cooldown=%.2f, pose_max_age=%.2f",
+            enable_aborted_reinit_, aborted_reinit_threshold_, aborted_reinit_cooldown_sec_, last_good_pose_max_age_sec_);
+        RCLCPP_INFO(this->get_logger(),
+            "AMCL gate: enable=%d, timeout=%.2fs, min_samples=%d",
+            require_amcl_ready_before_nav_, amcl_pose_timeout_sec_, amcl_pose_min_samples_);
     }
 
   private:
@@ -177,6 +199,8 @@ class SimpleDecisionNode : public rclcpp::Node
     rclcpp_action::Client<NavigateThroughPoses>::SharedPtr nav_client_;
     rclcpp::Subscription<NavigateThroughPoses::Impl::FeedbackMessage>::SharedPtr nav_feedback_sub_;
     rclcpp::Subscription<action_msgs::msg::GoalStatusArray>::SharedPtr nav_status_sub_;
+    rclcpp::Subscription<geometry_msgs::msg::PoseWithCovarianceStamped>::SharedPtr amcl_pose_sub_;
+    rclcpp::Publisher<geometry_msgs::msg::PoseWithCovarianceStamped>::SharedPtr initialpose_pub_;
 
     // === 决策核心 ===
     std::shared_ptr<rdsys::RobotDecisionSys> rdsys_;
@@ -203,6 +227,25 @@ class SimpleDecisionNode : public rclcpp::Node
     int recovery_hp_threshold_{80};
     int low_hp_return_threshold_{80};
     bool in_recovery_mode_{false};
+    int consecutive_aborted_count_{0};
+    int aborted_reinit_threshold_{3};
+    double aborted_reinit_cooldown_sec_{2.0};
+    double last_good_pose_max_age_sec_{8.0};
+    bool enable_aborted_reinit_{true};
+    rclcpp::Time last_reinit_time_{0, 0, RCL_ROS_TIME};
+
+    bool has_last_good_pose_{false};
+    float last_good_x_{0.0f};
+    float last_good_y_{0.0f};
+    float last_good_theta_{0.0f};
+    rclcpp::Time last_good_pose_time_{0, 0, RCL_ROS_TIME};
+
+    std::mutex amcl_pose_mutex_;
+    rclcpp::Time last_amcl_pose_time_{0, 0, RCL_ROS_TIME};
+    int amcl_pose_samples_{0};
+    bool require_amcl_ready_before_nav_{true};
+    double amcl_pose_timeout_sec_{1.5};
+    int amcl_pose_min_samples_{3};
 
     // 初始位置（当没有Nav2反馈时使用）
     float initial_x_{-1.5f};
@@ -215,6 +258,64 @@ class SimpleDecisionNode : public rclcpp::Node
     float position_check_threshold_{1.0f};
     float position_check_activation_radius_{3.0f};
     int center_waypoint_id_{5};
+
+    bool isAmclReady()
+    {
+        if (!require_amcl_ready_before_nav_)
+            return true;
+
+        std::lock_guard<std::mutex> lock(amcl_pose_mutex_);
+        if (amcl_pose_samples_ < amcl_pose_min_samples_)
+            return false;
+
+        const double dt = (this->now() - last_amcl_pose_time_).seconds();
+        return dt >= 0.0 && dt <= amcl_pose_timeout_sec_;
+    }
+
+    void publishInitialPoseForRecovery(const char* reason)
+    {
+        double x = initial_x_;
+        double y = initial_y_;
+        double theta = initial_theta_;
+        bool use_last_good = false;
+
+        {
+            std::lock_guard<std::mutex> lock(nav_feedback_mutex_);
+            if (has_last_good_pose_)
+            {
+                const double age = (this->now() - last_good_pose_time_).seconds();
+                if (age >= 0.0 && age <= last_good_pose_max_age_sec_)
+                {
+                    x = last_good_x_;
+                    y = last_good_y_;
+                    theta = last_good_theta_;
+                    use_last_good = true;
+                }
+            }
+        }
+
+        geometry_msgs::msg::PoseWithCovarianceStamped pose_msg;
+        pose_msg.header.stamp = rclcpp::Time(0, 0, RCL_ROS_TIME);
+        pose_msg.header.frame_id = "map";
+        pose_msg.pose.pose.position.x = x;
+        pose_msg.pose.pose.position.y = y;
+        pose_msg.pose.pose.position.z = 0.0;
+
+        tf2::Quaternion q;
+        q.setRPY(0.0, 0.0, theta);
+        pose_msg.pose.pose.orientation = tf2::toMsg(q);
+
+        pose_msg.pose.covariance[0] = 0.25;
+        pose_msg.pose.covariance[7] = 0.25;
+        pose_msg.pose.covariance[35] = 0.06853891909122467;
+
+        initialpose_pub_->publish(pose_msg);
+        RCLCPP_WARN(this->get_logger(),
+            "[Reinit] %s: publish /initialpose by %s (x=%.2f, y=%.2f, yaw=%.2f)",
+            reason,
+            use_last_good ? "last_good_pose" : "startup_initial_pose",
+            x, y, theta);
+    }
 
     bool isLowHp(int hp) const
     {
@@ -276,7 +377,7 @@ class SimpleDecisionNode : public rclcpp::Node
 
         bool has_enemy = (msg->data[0] != 0.0f);
         
-        RCLCPP_INFO(this->get_logger(), 
+        RCLCPP_DEBUG_THROTTLE(this->get_logger(), *this->get_clock(), 1000,
             "[AutoAim] has_enemy=%d, has_saved_goal=%d, saved_target=%d, resume_cooldown=%.2f",
             has_enemy, has_saved_goal_, saved_target_waypoint_, resume_cooldown_sec_);
 
@@ -316,7 +417,8 @@ class SimpleDecisionNode : public rclcpp::Node
         }
         else
         {
-            RCLCPP_INFO(this->get_logger(), "[AutoAim] No saved goal, running decision...");
+            RCLCPP_DEBUG_THROTTLE(this->get_logger(), *this->get_clock(), 1000,
+                "[AutoAim] No saved goal, running decision...");
             runDecisionOnce(*msg);
         }
     }
@@ -325,6 +427,27 @@ class SimpleDecisionNode : public rclcpp::Node
     {
         std::lock_guard<std::mutex> lock(nav_feedback_mutex_);
         latest_nav_feedback_ = msg;
+
+        const auto& p = msg->feedback.current_pose.pose.position;
+        const auto& q = msg->feedback.current_pose.pose.orientation;
+        if (std::isfinite(p.x) && std::isfinite(p.y) &&
+            std::isfinite(q.x) && std::isfinite(q.y) && std::isfinite(q.z) && std::isfinite(q.w))
+        {
+            has_last_good_pose_ = true;
+            last_good_x_ = static_cast<float>(p.x);
+            last_good_y_ = static_cast<float>(p.y);
+            last_good_theta_ = static_cast<float>(tf2::getYaw(q));
+            last_good_pose_time_ = this->now();
+        }
+    }
+
+    void amclPoseCallback(const geometry_msgs::msg::PoseWithCovarianceStamped::SharedPtr msg)
+    {
+        std::lock_guard<std::mutex> lock(amcl_pose_mutex_);
+        last_amcl_pose_time_ = this->now();
+        if (amcl_pose_samples_ < 1000000)
+            ++amcl_pose_samples_;
+        (void)msg;
     }
 
     void nav2GoalStatusCallback(const action_msgs::msg::GoalStatusArray::SharedPtr msg)
@@ -358,6 +481,32 @@ class SimpleDecisionNode : public rclcpp::Node
                 "[NavStatus] goal_status changed(by goal_id): %d -> %d (last_sent_target=%d, saved_target=%d, has_saved=%d)",
                 old_status, goal_status_, last_sent_target_waypoint_, saved_target_waypoint_, has_saved_goal_);
 
+            if (goal_status_ == action_msgs::msg::GoalStatus::STATUS_ABORTED &&
+                old_status != action_msgs::msg::GoalStatus::STATUS_ABORTED)
+            {
+                consecutive_aborted_count_++;
+                RCLCPP_WARN(this->get_logger(),
+                    "[NavStatus] ABORTED count=%d/%d",
+                    consecutive_aborted_count_, aborted_reinit_threshold_);
+
+                if (enable_aborted_reinit_ && consecutive_aborted_count_ >= aborted_reinit_threshold_)
+                {
+                    const double dt = (this->now() - last_reinit_time_).seconds();
+                    if (dt >= aborted_reinit_cooldown_sec_)
+                    {
+                        publishInitialPoseForRecovery("Consecutive ABORTED");
+                        last_reinit_time_ = this->now();
+                        consecutive_aborted_count_ = 0;
+                    }
+                }
+            }
+            else if (goal_status_ == action_msgs::msg::GoalStatus::STATUS_SUCCEEDED ||
+                     goal_status_ == action_msgs::msg::GoalStatus::STATUS_EXECUTING ||
+                     goal_status_ == action_msgs::msg::GoalStatus::STATUS_ACCEPTED)
+            {
+                consecutive_aborted_count_ = 0;
+            }
+
             // 终态后清空当前goal_id，等待下一次发送重新绑定
             if (goal_status_ == action_msgs::msg::GoalStatus::STATUS_SUCCEEDED ||
                 goal_status_ == action_msgs::msg::GoalStatus::STATUS_ABORTED ||
@@ -374,6 +523,31 @@ class SimpleDecisionNode : public rclcpp::Node
         RCLCPP_INFO(this->get_logger(), 
             "[NavStatus] goal_status changed(fallback back): %d -> %d (last_sent_target=%d, saved_target=%d, has_saved=%d)",
             old_status, goal_status_, last_sent_target_waypoint_, saved_target_waypoint_, has_saved_goal_);
+
+        if (goal_status_ == action_msgs::msg::GoalStatus::STATUS_ABORTED &&
+            old_status != action_msgs::msg::GoalStatus::STATUS_ABORTED)
+        {
+            consecutive_aborted_count_++;
+            RCLCPP_WARN(this->get_logger(),
+                "[NavStatus] ABORTED count(fallback)=%d/%d",
+                consecutive_aborted_count_, aborted_reinit_threshold_);
+            if (enable_aborted_reinit_ && consecutive_aborted_count_ >= aborted_reinit_threshold_)
+            {
+                const double dt = (this->now() - last_reinit_time_).seconds();
+                if (dt >= aborted_reinit_cooldown_sec_)
+                {
+                    publishInitialPoseForRecovery("Consecutive ABORTED (fallback)");
+                    last_reinit_time_ = this->now();
+                    consecutive_aborted_count_ = 0;
+                }
+            }
+        }
+        else if (goal_status_ == action_msgs::msg::GoalStatus::STATUS_SUCCEEDED ||
+                 goal_status_ == action_msgs::msg::GoalStatus::STATUS_EXECUTING ||
+                 goal_status_ == action_msgs::msg::GoalStatus::STATUS_ACCEPTED)
+        {
+            consecutive_aborted_count_ = 0;
+        }
     }
 
     void runDecisionOnce(const std_msgs::msg::Float32MultiArray& autoaim)
@@ -385,7 +559,7 @@ class SimpleDecisionNode : public rclcpp::Node
 
         bool vision_valid = (autoaim.data[0] != 0.0f);
         const int current_hp = static_cast<int>(autoaim.data[2]);
-        RCLCPP_INFO(this->get_logger(), 
+        RCLCPP_DEBUG_THROTTLE(this->get_logger(), *this->get_clock(), 1000,
             "[RunDecision] vision_valid=%d, last_sent_target=%d, goal_status=%d",
             vision_valid, last_sent_target_waypoint_, goal_status_);
 
@@ -532,6 +706,13 @@ class SimpleDecisionNode : public rclcpp::Node
         if (!nav_client_)
         {
             RCLCPP_WARN(this->get_logger(), "[SendNavGoal] nav_client_ is null!");
+            return false;
+        }
+
+        if (!isAmclReady())
+        {
+            RCLCPP_WARN_THROTTLE(this->get_logger(), *this->get_clock(), 1000,
+                "[SendNavGoal] AMCL not ready yet, skip send goal.");
             return false;
         }
 

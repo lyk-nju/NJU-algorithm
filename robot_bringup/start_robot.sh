@@ -14,11 +14,11 @@ ros2 launch robot_bringup robot_bringup.launch.py"
 
 if command -v gnome-terminal >/dev/null 2>&1 && [ -n "${DISPLAY:-}" ]; then
 	gnome-terminal --title="Auto Aimer" -- bash -lc "${AUTO_AIMER_CMD}; exec bash"
-	sleep 1
+	sleep 3
 	gnome-terminal --title="Robot Bringup" -- bash -lc "${BRINGUP_CMD}; exec bash"
 else
 	echo "未检测到可用图形终端（gnome-terminal/DISPLAY），退化为当前 shell 启动。"
 	bash -lc "${AUTO_AIMER_CMD}" &
-	sleep 1
+	sleep 3
 	bash -lc "${BRINGUP_CMD}"
 fi

@@ -49,6 +49,6 @@ def generate_launch_description():
         camera_launch,
         TimerAction(
             actions=[decision_launch],
-            period=3.0
+            period=6.0
         )
     ])
