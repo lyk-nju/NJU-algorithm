@@ -1,0 +1,7 @@
+[Unit]
+Description=RoboMaster Nav Healthcheck
+After=robot_nav.service
+
+[Service]
+Type=oneshot
+ExecStart=/bin/bash /home/nvidia/NJU-algorithm/robot_bringup/systemd/robot_nav_healthcheck.sh

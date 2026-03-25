@@ -1,7 +1,8 @@
 #include "serial_manager.hpp"
 #include <Eigen/Dense>
-#include <cstdio>
 #include <cerrno>
+#include <chrono>
+#include <cstdio>
 #include <cstring>
 #include <filesystem>
 #include <fcntl.h>
@@ -10,13 +11,37 @@
 #include <stdexcept>
 #include <string>
 #include <termios.h>
+#include <thread>
 #include <unistd.h>
 
 namespace io
 {
+namespace
+{
+bool is_port_accessible(const std::string &port)
+{
+    return !port.empty() && std::filesystem::exists(port) && std::filesystem::is_character_file(port);
+}
+
+std::string resolve_port(const std::string &preferred_port)
+{
+    if (is_port_accessible(preferred_port))
+    {
+        return preferred_port;
+    }
+
+    if (preferred_port.find("ttyACM") != std::string::npos)
+    {
+        return check_port();
+    }
+
+    return preferred_port;
+}
+} // namespace
+
 std::string check_port()
 {
-    const char *candidates[] = {"/dev/ttyACM0", "/dev/ttyACM1","/dev/ttyACM2", "/dev/ttyACM3"};
+    const char *candidates[] = {"/dev/ttyACM0", "/dev/ttyACM1", "/dev/ttyACM2", "/dev/ttyACM3"};
     for (const char *candidate : candidates)
     {
         if (std::filesystem::exists(candidate) && std::filesystem::is_character_file(candidate))
@@ -27,98 +52,118 @@ std::string check_port()
 
     return "/dev/ttyACM0";
 }
-USB::USB(const std::string &send_port, const std::string &receive_port)
+
+int USB::open_port(const std::string &port)
 {
-    // Initialize send port
-    send_fd = open(send_port.c_str(), O_RDWR | O_NOCTTY | O_SYNC);
-    if (send_fd < 0)
-    {
-        std::string error_msg = "Error opening send serial port: " + send_port + " (errno: " + std::to_string(errno) + " - " + strerror(errno) + ")";
-        throw std::runtime_error(error_msg);
-    }
-
-    memset(&send_tty, 0, sizeof send_tty);
-    if (tcgetattr(send_fd, &send_tty) != 0)
-    {
-        close(send_fd);
-        throw std::runtime_error("Error getting send serial attributes");
-    }
-
-    cfsetospeed(&send_tty, B115200);
-    cfsetispeed(&send_tty, B115200);
-
-    send_tty.c_cflag = (send_tty.c_cflag & ~CSIZE) | CS8;
-    send_tty.c_iflag &= ~IGNBRK;
-    send_tty.c_lflag = 0;
-    send_tty.c_oflag = 0;
-    send_tty.c_cc[VMIN] = 0;
-    send_tty.c_cc[VTIME] = 5;
-
-    send_tty.c_iflag &= ~(IXON | IXOFF | IXANY);
-    send_tty.c_cflag |= (CLOCAL | CREAD);
-    send_tty.c_cflag &= ~(PARENB | PARODD);
-    send_tty.c_cflag &= ~CSTOPB;
-    send_tty.c_cflag &= ~CRTSCTS;
-
-    if (tcsetattr(send_fd, TCSANOW, &send_tty) != 0)
-    {
-        close(send_fd);
-        throw std::runtime_error("Error setting send serial attributes");
-    }
-
-    // Initialize receive port
-    receive_fd = open(receive_port.c_str(), O_RDWR | O_NOCTTY | O_SYNC);
-    if (receive_fd < 0)
-    {
-        close(send_fd);
-        std::string error_msg = "Error opening receive serial port: " + receive_port + " (errno: " + std::to_string(errno) + " - " + strerror(errno) + ")";
-        throw std::runtime_error(error_msg);
-    }
-
-    memset(&receive_tty, 0, sizeof receive_tty);
-    if (tcgetattr(receive_fd, &receive_tty) != 0)
-    {
-        close(send_fd);
-        close(receive_fd);
-        throw std::runtime_error("Error getting receive serial attributes");
-    }
-
-    cfsetospeed(&receive_tty, B115200);
-    cfsetispeed(&receive_tty, B115200);
-
-    receive_tty.c_cflag = (receive_tty.c_cflag & ~CSIZE) | CS8;
-    receive_tty.c_iflag &= ~IGNBRK;
-    receive_tty.c_lflag = 0;
-    receive_tty.c_oflag = 0;
-    receive_tty.c_cc[VMIN] = 0;
-    receive_tty.c_cc[VTIME] = 5;
-
-    receive_tty.c_iflag &= ~(IXON | IXOFF | IXANY);
-    receive_tty.c_cflag |= (CLOCAL | CREAD);
-    receive_tty.c_cflag &= ~(PARENB | PARODD);
-    receive_tty.c_cflag &= ~CSTOPB;
-    receive_tty.c_cflag &= ~CRTSCTS;
-
-    if (tcsetattr(receive_fd, TCSANOW, &receive_tty) != 0)
-    {
-        close(send_fd);
-        close(receive_fd);
-        throw std::runtime_error("Error setting receive serial attributes");
-    }
-
-    std::cout << "Serial ports opened successfully: " << send_port << " (send), " << receive_port << " (receive)" << std::endl;
+    return open(port.c_str(), O_RDWR | O_NOCTTY | O_SYNC);
 }
 
-USB::~USB()
+void USB::configure_port(int fd, struct termios &tty)
+{
+    memset(&tty, 0, sizeof tty);
+    if (tcgetattr(fd, &tty) != 0)
+    {
+        throw std::runtime_error("Error getting serial attributes");
+    }
+
+    cfsetospeed(&tty, B115200);
+    cfsetispeed(&tty, B115200);
+
+    tty.c_cflag = (tty.c_cflag & ~CSIZE) | CS8;
+    tty.c_iflag &= ~IGNBRK;
+    tty.c_lflag = 0;
+    tty.c_oflag = 0;
+    tty.c_cc[VMIN] = 0;
+    tty.c_cc[VTIME] = 5;
+
+    tty.c_iflag &= ~(IXON | IXOFF | IXANY);
+    tty.c_cflag |= (CLOCAL | CREAD);
+    tty.c_cflag &= ~(PARENB | PARODD);
+    tty.c_cflag &= ~CSTOPB;
+    tty.c_cflag &= ~CRTSCTS;
+
+    if (tcsetattr(fd, TCSANOW, &tty) != 0)
+    {
+        throw std::runtime_error("Error setting serial attributes");
+    }
+
+    tcflush(fd, TCIOFLUSH);
+}
+
+void USB::close_ports_locked()
 {
     if (send_fd >= 0)
     {
         close(send_fd);
+        send_fd = -1;
     }
     if (receive_fd >= 0)
     {
         close(receive_fd);
+        receive_fd = -1;
     }
+}
+
+bool USB::reopen_ports_locked()
+{
+    close_ports_locked();
+    receive_buffer_.clear();
+
+    const std::string resolved_send_port = resolve_port(send_port_);
+    const std::string resolved_receive_port = resolve_port(receive_port_);
+
+    int new_send_fd = open_port(resolved_send_port);
+    if (new_send_fd < 0)
+    {
+        return false;
+    }
+
+    int new_receive_fd = open_port(resolved_receive_port);
+    if (new_receive_fd < 0)
+    {
+        close(new_send_fd);
+        return false;
+    }
+
+    try
+    {
+        configure_port(new_send_fd, send_tty);
+        configure_port(new_receive_fd, receive_tty);
+    }
+    catch (...)
+    {
+        close(new_send_fd);
+        close(new_receive_fd);
+        throw;
+    }
+
+    send_fd = new_send_fd;
+    receive_fd = new_receive_fd;
+    send_port_ = resolved_send_port;
+    receive_port_ = resolved_receive_port;
+
+    std::cout << "Serial ports opened successfully: " << send_port_ << " (send), " << receive_port_ << " (receive)" << std::endl;
+    return true;
+}
+
+USB::USB(const std::string &send_port, const std::string &receive_port)
+    : send_port_(send_port), receive_port_(receive_port)
+{
+    if (!reopen_ports_locked())
+    {
+        std::string error_msg = "Error opening serial ports: " + send_port_ + " (send), " + receive_port_ + " (receive)";
+        if (errno != 0)
+        {
+            error_msg += " (errno: " + std::to_string(errno) + " - " + strerror(errno) + ")";
+        }
+        throw std::runtime_error(error_msg);
+    }
+}
+
+USB::~USB()
+{
+    std::lock_guard<std::mutex> lock(serial_mutex_);
+    close_ports_locked();
 }
 
 bool USB::send_command(const Command &cmd)
@@ -136,87 +181,130 @@ bool USB::send_command(const Command &cmd, const base_Command &base_command)
     ss.setf(std::ios::fixed);
     ss.precision(6);
 
-    ss << valid_i << "," << shoot_i << "," << cmd.yaw << "," << cmd.pitch<< "," << base_command.v_x<< "," << base_command.v_y<< "," << base_command.w_yaw;
-
+    ss << valid_i << "," << shoot_i << "," << cmd.yaw << "," << cmd.pitch << "," << base_command.v_x << "," << base_command.v_y << "," << base_command.w_yaw;
     ss << "\n";
 
-    std::string msg = ss.str();
-    ssize_t n_written = write(send_fd, msg.c_str(), msg.length());
-    return n_written == static_cast<ssize_t>(msg.length());
+    const std::string msg = ss.str();
+    std::lock_guard<std::mutex> lock(serial_mutex_);
+
+    for (int attempt = 0; attempt < 2; ++attempt)
+    {
+        if (send_fd < 0 && !reopen_ports_locked())
+        {
+            std::this_thread::sleep_for(std::chrono::milliseconds(50));
+            continue;
+        }
+
+        ssize_t n_written = write(send_fd, msg.c_str(), msg.length());
+        if (n_written == static_cast<ssize_t>(msg.length()))
+        {
+            return true;
+        }
+
+        if (n_written < 0)
+        {
+            std::cerr << "Serial send failed on " << send_port_ << ": " << strerror(errno) << ", trying to reopen" << std::endl;
+        }
+        else
+        {
+            std::cerr << "Serial send incomplete on " << send_port_ << ": " << n_written << "/" << msg.length() << ", trying to reopen" << std::endl;
+        }
+
+        if (!reopen_ports_locked())
+        {
+            std::this_thread::sleep_for(std::chrono::milliseconds(50));
+        }
+    }
+
+    return false;
 }
 
 bool USB::receive_all(Eigen::Quaterniond &quat, double &yaw, double &pitch, JudgerData &judger_data)
 {
-    static std::string buffer;
     char tmp_buf[1024];
+    ssize_t n = 0;
 
-    // 1. 读取数据
-    ssize_t n = read(receive_fd, tmp_buf, sizeof(tmp_buf) - 1);
-    if (n > 0)
     {
-        tmp_buf[n] = '\0';
-        buffer.append(tmp_buf);
+        std::lock_guard<std::mutex> lock(serial_mutex_);
+        if (receive_fd < 0 && !reopen_ports_locked())
+        {
+            return false;
+        }
+
+        n = read(receive_fd, tmp_buf, sizeof(tmp_buf) - 1);
+        if (n > 0)
+        {
+            tmp_buf[n] = '\0';
+            receive_buffer_.append(tmp_buf);
+        }
+        else if (n < 0 && errno != EAGAIN && errno != EWOULDBLOCK)
+        {
+            std::cerr << "Serial receive failed on " << receive_port_ << ": " << strerror(errno) << ", trying to reopen" << std::endl;
+            reopen_ports_locked();
+            return false;
+        }
     }
-    else if (n < 0 && errno != EAGAIN && errno != EWOULDBLOCK)
+
+    if (receive_buffer_.size() > 4096)
     {
+        receive_buffer_.clear();
         return false;
     }
 
-    // 2. 缓冲区防爆
-    if (buffer.size() > 4096)
-    {
-        buffer.clear();
-        return false;
-    }
-
-    // 3. 从后往前扫描，寻找有效行
-    size_t search_pos = buffer.size();
+    size_t search_pos = receive_buffer_.size();
     std::string line;
     bool found_valid_line = false;
     size_t line_end_pos = std::string::npos;
 
     while (search_pos > 0)
     {
-        size_t last_n = buffer.rfind('\n', search_pos - 1);
+        size_t last_n = receive_buffer_.rfind('\n', search_pos - 1);
         if (last_n == std::string::npos)
         {
-            if (buffer.size() > 100) buffer.clear();
+            if (receive_buffer_.size() > 100)
+            {
+                receive_buffer_.clear();
+            }
             return false;
         }
 
         size_t current_line_end = last_n;
         size_t current_line_start = 0;
-        size_t prev_n = buffer.rfind('\n', last_n - 1);
+        size_t prev_n = std::string::npos;
+        if (last_n > 0)
+        {
+            prev_n = receive_buffer_.rfind('\n', last_n - 1);
+        }
         if (prev_n != std::string::npos)
         {
             current_line_start = prev_n + 1;
         }
 
         size_t len = current_line_end - current_line_start;
-        if (len > 10) // 过滤空行/过短行
+        if (len > 10)
         {
-            line = buffer.substr(current_line_start, len);
+            line = receive_buffer_.substr(current_line_start, len);
             line_end_pos = current_line_end;
             found_valid_line = true;
             break;
         }
-        else
-        {
-            search_pos = last_n;
-        }
+
+        search_pos = last_n;
     }
 
-    if (!found_valid_line) return false;
+    if (!found_valid_line)
+    {
+        return false;
+    }
 
-    // 4. 清除已处理数据
-    buffer.erase(0, line_end_pos + 1);
+    receive_buffer_.erase(0, line_end_pos + 1);
 
-    // 5. 解析数据：w,x,y,z,yaw,pitch,game_time,self_hp
     judger_data.game_time = -1;
     judger_data.self_hp = -1;
+    judger_data.self_id = -1;
 
     std::vector<double> nums;
-    nums.reserve(16); // 预留一点空间
+    nums.reserve(16);
 
     size_t start = 0;
     while (start < line.size())
@@ -234,12 +322,11 @@ bool USB::receive_all(Eigen::Quaterniond &quat, double &yaw, double &pitch, Judg
             start = comma_pos + 1;
         }
 
-        // 去掉可能的空白
         size_t first = token.find_first_not_of(" \t\r");
         size_t last = token.find_last_not_of(" \t\r");
         if (first == std::string::npos)
         {
-            continue; // 全是空白，跳过
+            continue;
         }
         token = token.substr(first, last - first + 1);
 
@@ -249,32 +336,31 @@ bool USB::receive_all(Eigen::Quaterniond &quat, double &yaw, double &pitch, Judg
         }
         catch (...)
         {
-            return false; // 某个字段不是合法数字
+            return false;
         }
     }
-    // std::cout << "Num size: " << nums.size() << std::endl;
 
     if (nums.size() < 6)
     {
-        // 不足 6 个值，格式错误
         return false;
     }
 
-    // 前 4 个：四元数，接着 yaw/pitch
     quat = Eigen::Quaterniond(nums[0], nums[1], nums[2], nums[3]);
     yaw = nums[4];
     pitch = nums[5];
 
-    // if (nums.size() >= 7)
-    //     std::cout << "size right" << std::endl;
-
-    // 第 7、8 个：比赛时间、自身血量
     if (nums.size() >= 7)
+    {
         judger_data.game_time = static_cast<int>(nums[6]);
+    }
     if (nums.size() >= 8)
+    {
         judger_data.self_hp = static_cast<int>(nums[7]);
-    if (nums.size() >= 8)
+    }
+    if (nums.size() >= 9)
+    {
         judger_data.self_id = static_cast<int>(nums[8]);
+    }
 
     return true;
 }

@@ -1,0 +1,22 @@
+[Unit]
+Description=RoboMaster Robot System - Navigation & Decision
+Wants=time-sync.target
+After=network.target time-sync.target robot_vision.service
+BindsTo=robot_vision.service
+
+[Service]
+Type=simple
+WorkingDirectory=/home/nvidia/NJU-algorithm
+Environment="ROS_DOMAIN_ID=42"
+Environment="RMW_IMPLEMENTATION=rmw_cyclonedds_cpp"
+Environment="MVCAM_SDK_PATH=/opt/MVS"
+Environment="LD_LIBRARY_PATH=/home/nvidia/NJU-algorithm/navigation_task/install/teb_msgs/lib:/home/nvidia/NJU-algorithm/navigation_task/install/teb_local_planner/lib:/home/nvidia/NJU-algorithm/navigation_task/install/fast_lio/lib:/home/nvidia/NJU-algorithm/navigation_task/install/imu_complementary_filter/lib:/home/nvidia/NJU-algorithm/navigation_task/install/linefit_ground_segmentation_ros/lib:/home/nvidia/NJU-algorithm/navigation_task/install/livox_ros_driver2/lib:/home/nvidia/NJU-algorithm/navigation_task/install/fake_vel_transform/lib:/opt/MVS/lib/aarch64:/home/nvidia/NJU_RMVision/hiki_ros2/hikSDK/lib/arm64:/usr/local/opencv-4.12/lib:/usr/local/lib:/opt/ros/humble/lib:/usr/local/cuda/lib64"
+ExecStartPre=/bin/sleep 8
+ExecStart=/bin/bash -c 'source /opt/ros/humble/setup.bash && source /home/nvidia/NJU-algorithm/navigation_task/install/setup.bash && source /home/nvidia/NJU-algorithm/vision_task/hiki_ros2/install/setup.bash && source /home/nvidia/NJU-algorithm/decision_task/install/setup.sh && source /home/nvidia/NJU-algorithm/robot_bringup/install/setup.bash && ros2 launch robot_bringup robot_bringup.launch.py'
+Restart=on-failure
+RestartSec=5
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=robot_system.target

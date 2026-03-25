@@ -34,6 +34,9 @@ class ROS2Manager : public rclcpp::Node
 
 
   private:
+    int save_count_ = 0; // 记录已保存的图像数量
+    const int max_save_count_ = 10; // 最大保存数量
+    const std::string save_path_ = "/home/nvidia/NJU-algorithm/vision_task/hiki_ros2/image/";
     // 图像订阅回调
     void image_callback(const sensor_msgs::msg::Image::SharedPtr msg);
     void cmd_vel_callback(const geometry_msgs::msg::Twist::SharedPtr msg);

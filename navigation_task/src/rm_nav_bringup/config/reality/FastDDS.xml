@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<dds>
+  <profiles xmlns="http://www.eprosima.com/XMLSchemas/fastRTPSProfile">
+    <transport_descriptors>
+      <transport_descriptor>
+        <transport_id>udpv6_transport</transport_id>
+        <type>UDPv6</type>
+        <maxMessageSize>65500</maxMessageSize>
+      </transport_descriptor>
+    </transport_descriptors>
+    <participant library_name="fastrtps" creation_mode="INTRAPROCESS">
+      <rtps>
+        <defaultUnicastLocatorList>
+          <locator kind="LOCATOR_KIND_MULTICAST" port="24500"/>
+        </defaultUnicastLocatorList>
+      </rtps>
+    </participant>
+  </profiles>
+</dds>

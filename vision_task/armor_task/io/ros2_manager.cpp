@@ -2,6 +2,7 @@
 #include "detector.hpp"
 #include "pnp_solver.hpp"
 #include "tracker.hpp"
+#include <filesystem>
 
 ROS2Manager::ROS2Manager() : Node("ros2_manager")
 {
@@ -21,6 +22,11 @@ ROS2Manager::ROS2Manager() : Node("ros2_manager")
 
     autoaim_pub_ = this->create_publisher<std_msgs::msg::Float32MultiArray>("/autoaim_data", 10);
     autoaim_timer_ = this->create_wall_timer(std::chrono::milliseconds(100), std::bind(&ROS2Manager::timer_callback, this));
+    if (!std::filesystem::exists(save_path_)) 
+    {
+        std::filesystem::create_directories(save_path_);
+        RCLCPP_INFO(this->get_logger(), "Created directory: %s", save_path_.c_str());
+    }
 }
 
 void ROS2Manager::image_callback(const sensor_msgs::msg::Image::SharedPtr msg)
@@ -29,6 +35,17 @@ void ROS2Manager::image_callback(const sensor_msgs::msg::Image::SharedPtr msg)
     {
         auto cv_ptr = cv_bridge::toCvShare(msg, "bgr8");
         const cv::Mat &frame = cv_ptr->image;
+
+        if (save_count_ < max_save_count_) 
+        {
+            std::string file_name = save_path_ + "img_" + std::to_string(save_count_) + ".jpg";
+            if (cv::imwrite(file_name, frame)) {
+                RCLCPP_INFO(this->get_logger(), "Saved image: %s", file_name.c_str());
+                save_count_++;
+            } else {
+                RCLCPP_ERROR(this->get_logger(), "Failed to save image: %s", file_name.c_str());
+            }
+        }
 
         // 转换ROS时间戳为steady_clock时间点
         // ROS使用的是系统时间（system_clock），我们需要转换为steady_clock

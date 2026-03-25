@@ -25,10 +25,12 @@ min_detect_count: 5
 max_temp_lost_count: 15
 
 #####-----弹道参数-----#####
-yaw_offset: 0.6  #需要实际标定，单位为°
-pitch_offset: -3.0   #需要实际标定，单位为°
-comming_angle: 80.0 #来弹角度，单位为°
-leaving_angle: 10.0 #去弹角度，单位为°
+# 变大往左边
+yaw_offset: 1.8  #需要实际标定，单位为°
+# 变大往上边
+pitch_offset: 0.4   #需要实际标定，单位为°
+comming_angle: 60.0 #来弹角度，单位为°
+leaving_angle: 8.0 #去弹角度，单位为°
 high_speed_delay_time: 0.1275 #高速时延时，单位为s
 low_speed_delay_time: 0.1275 #低速时延时，单位为s
 decision_speed_: 20.0 #低速/高速切换阈值，单位为m/s

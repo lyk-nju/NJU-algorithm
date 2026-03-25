@@ -1,0 +1,7 @@
+[Unit]
+Description=RoboMaster Robot System (Vision + Nav + Decision)
+Wants=network.target robot_vision.service robot_nav.service
+After=network.target
+
+[Install]
+WantedBy=multi-user.target

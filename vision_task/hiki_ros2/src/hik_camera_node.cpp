@@ -140,7 +140,7 @@ public:
 
       while (rclcpp::ok()) {
         auto get_start = std::chrono::steady_clock::now();
-        nRet = MV_CC_GetImageBuffer(camera_handle_, &out_frame, 1000);
+        nRet = MV_CC_GetImageBuffer(camera_handle_, &out_frame, 5000);
         auto get_end = std::chrono::steady_clock::now();
         if (MV_OK == nRet) {
           auto convert_start = std::chrono::steady_clock::now();

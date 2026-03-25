@@ -2,6 +2,7 @@
 #define SERIAL_MANAGER_HPP
 
 #include <Eigen/Dense>
+#include <mutex>
 #include <string>
 #include <termios.h>
 #include <vector>
@@ -51,10 +52,19 @@ struct imu_data
 class USB
 {
   private:
-    int send_fd;
-    int receive_fd;
+    int send_fd = -1;
+    int receive_fd = -1;
     struct termios send_tty;
     struct termios receive_tty;
+    std::string send_port_;
+    std::string receive_port_;
+    std::string receive_buffer_;
+    std::mutex serial_mutex_;
+
+    int open_port(const std::string &port);
+    void configure_port(int fd, struct termios &tty);
+    void close_ports_locked();
+    bool reopen_ports_locked();
 
   public:
     
