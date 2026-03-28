@@ -39,6 +39,7 @@ def generate_launch_description():
     container_name_full = (namespace, '/', container_name)
     use_respawn = LaunchConfiguration('use_respawn')
     log_level = LaunchConfiguration('log_level')
+    cpu_set = LaunchConfiguration('cpu_set')
 
     lifecycle_nodes = ['controller_server',
                        'smoother_server',
@@ -70,6 +71,9 @@ def generate_launch_description():
 
     stdout_linebuf_envvar = SetEnvironmentVariable(
         'RCUTILS_LOGGING_BUFFERED_STREAM', '1')
+    taskset_prefix = PythonExpression([
+        "'taskset -c ", cpu_set, "' if '", cpu_set, "' else ''"
+    ])
 
     declare_namespace_cmd = DeclareLaunchArgument(
         'namespace',
@@ -106,12 +110,17 @@ def generate_launch_description():
         'log_level', default_value='info',
         description='log level')
 
+    declare_cpu_set_cmd = DeclareLaunchArgument(
+        'cpu_set', default_value='',
+        description='CPU affinity for navigation processes, e.g. 2-4')
+
     load_nodes = GroupAction(
         condition=IfCondition(PythonExpression(['not ', use_composition])),
         actions=[
             Node(
                 package='nav2_controller',
                 executable='controller_server',
+                prefix=taskset_prefix,
                 output='screen',
                 respawn=use_respawn,
                 respawn_delay=2.0,
@@ -122,6 +131,7 @@ def generate_launch_description():
                 package='nav2_smoother',
                 executable='smoother_server',
                 name='smoother_server',
+                prefix=taskset_prefix,
                 output='screen',
                 respawn=use_respawn,
                 respawn_delay=2.0,
@@ -132,6 +142,7 @@ def generate_launch_description():
                 package='nav2_planner',
                 executable='planner_server',
                 name='planner_server',
+                prefix=taskset_prefix,
                 output='screen',
                 respawn=use_respawn,
                 respawn_delay=2.0,
@@ -142,6 +153,7 @@ def generate_launch_description():
                 package='nav2_behaviors',
                 executable='behavior_server',
                 name='behavior_server',
+                prefix=taskset_prefix,
                 output='screen',
                 respawn=use_respawn,
                 respawn_delay=2.0,
@@ -152,6 +164,7 @@ def generate_launch_description():
                 package='nav2_bt_navigator',
                 executable='bt_navigator',
                 name='bt_navigator',
+                prefix=taskset_prefix,
                 output='screen',
                 respawn=use_respawn,
                 respawn_delay=2.0,
@@ -162,6 +175,7 @@ def generate_launch_description():
                 package='nav2_waypoint_follower',
                 executable='waypoint_follower',
                 name='waypoint_follower',
+                prefix=taskset_prefix,
                 output='screen',
                 respawn=use_respawn,
                 respawn_delay=2.0,
@@ -172,6 +186,7 @@ def generate_launch_description():
                 package='nav2_velocity_smoother',
                 executable='velocity_smoother',
                 name='velocity_smoother',
+                prefix=taskset_prefix,
                 output='screen',
                 respawn=use_respawn,
                 respawn_delay=2.0,
@@ -183,6 +198,7 @@ def generate_launch_description():
                 package='nav2_lifecycle_manager',
                 executable='lifecycle_manager',
                 name='lifecycle_manager_navigation',
+                prefix=taskset_prefix,
                 output='screen',
                 arguments=['--ros-args', '--log-level', log_level],
                 parameters=[{'use_sim_time': use_sim_time},
@@ -263,6 +279,7 @@ def generate_launch_description():
     ld.add_action(declare_container_name_cmd)
     ld.add_action(declare_use_respawn_cmd)
     ld.add_action(declare_log_level_cmd)
+    ld.add_action(declare_cpu_set_cmd)
     # Add the actions to launch all of the navigation nodes
     ld.add_action(load_nodes)
     ld.add_action(load_composable_nodes)

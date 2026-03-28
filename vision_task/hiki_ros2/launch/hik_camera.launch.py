@@ -3,7 +3,7 @@ import os
 from ament_index_python.packages import get_package_share_directory, get_package_prefix
 from launch import LaunchDescription
 from launch.actions import DeclareLaunchArgument
-from launch.substitutions import LaunchConfiguration
+from launch.substitutions import LaunchConfiguration, PythonExpression
 from launch_ros.actions import Node
 
 
@@ -13,10 +13,15 @@ def generate_launch_description():
     )
 
     camera_info_url = "/home/user/NJU_RMVision/hiki_ros2/config/camera_info.yaml"
+    cpu_set = LaunchConfiguration("cpu_set")
+    taskset_prefix = PythonExpression([
+        "'taskset -c ", cpu_set, "' if '", cpu_set, "' else ''"
+    ])
 
     return LaunchDescription(
         [
             DeclareLaunchArgument(name="params_file", default_value=params_file),
+            DeclareLaunchArgument(name="cpu_set", default_value=""),
             DeclareLaunchArgument(
                 name="camera_info_url", default_value=camera_info_url
             ),
@@ -26,6 +31,7 @@ def generate_launch_description():
             Node(
                 package="hik_camera",
                 executable="hik_camera_node",
+                prefix=taskset_prefix,
                 output="screen",
                 emulate_tty=True,
                 parameters=[

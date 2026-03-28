@@ -3,6 +3,7 @@
 #include <chrono>
 #include <cmath>
 #include <fstream>
+#include <limits>
 #include <memory>
 #include <string>
 
@@ -100,9 +101,9 @@ class SimpleDecisionNode : public rclcpp::Node
         enable_aborted_reinit_ = this->declare_parameter<bool>("enable_aborted_reinit", true);
 
         // 初始位置参数（当没有Nav2反馈时使用）
-        this->declare_parameter<float>("initial_pose.x", 1.5f);
-        this->declare_parameter<float>("initial_pose.y", 1.0f);
-        this->declare_parameter<float>("initial_pose.theta", 0.0f);
+        this->declare_parameter<float>("initial_pose.x", 1.0f);
+        this->declare_parameter<float>("initial_pose.y", -1.0f);
+        this->declare_parameter<float>("initial_pose.theta", -1.57f);
         initial_x_ = this->get_parameter("initial_pose.x").as_double();
         initial_y_ = this->get_parameter("initial_pose.y").as_double();
         initial_theta_ = this->get_parameter("initial_pose.theta").as_double();
@@ -227,6 +228,7 @@ class SimpleDecisionNode : public rclcpp::Node
     int recovery_hp_threshold_{80};
     int low_hp_return_threshold_{80};
     bool in_recovery_mode_{false};
+    int last_decision_hp_{-1};
     int consecutive_aborted_count_{0};
     int aborted_reinit_threshold_{3};
     double aborted_reinit_cooldown_sec_{2.0};
@@ -246,11 +248,12 @@ class SimpleDecisionNode : public rclcpp::Node
     bool require_amcl_ready_before_nav_{true};
     double amcl_pose_timeout_sec_{1.5};
     int amcl_pose_min_samples_{3};
+    bool amcl_ready_once_{false};
 
     // 初始位置（当没有Nav2反馈时使用）
-    float initial_x_{-1.5f};
-    float initial_y_{-2.5f};
-    float initial_theta_{0.0f};
+    float initial_x_{1.0f};
+    float initial_y_{-1.0f};
+    float initial_theta_{-1.57f};
     bool use_initial_pose_{true};
 
     // 位置自检定时器
@@ -265,11 +268,23 @@ class SimpleDecisionNode : public rclcpp::Node
             return true;
 
         std::lock_guard<std::mutex> lock(amcl_pose_mutex_);
+        if (amcl_ready_once_)
+            return true;
+
         if (amcl_pose_samples_ < amcl_pose_min_samples_)
             return false;
 
         const double dt = (this->now() - last_amcl_pose_time_).seconds();
-        return dt >= 0.0 && dt <= amcl_pose_timeout_sec_;
+        if (dt >= 0.0 && dt <= amcl_pose_timeout_sec_)
+        {
+            amcl_ready_once_ = true;
+            RCLCPP_INFO(this->get_logger(),
+                "[AMCL] Initial readiness reached: samples=%d, dt=%.3f <= %.3f. Future goal sends will not be blocked by pose freshness.",
+                amcl_pose_samples_, dt, amcl_pose_timeout_sec_);
+            return true;
+        }
+
+        return false;
     }
 
     void publishInitialPoseForRecovery(const char* reason)
@@ -319,7 +334,18 @@ class SimpleDecisionNode : public rclcpp::Node
 
     bool isLowHp(int hp) const
     {
-        return hp > 0 && hp <= low_hp_return_threshold_;
+        return hp > 0 && hp < low_hp_return_threshold_;
+    }
+
+    float distanceToWaypoint(int waypoint_id, float x, float y) const
+    {
+        auto wp = rdsys_->getWayPointByID(waypoint_id);
+        if (!wp)
+            return std::numeric_limits<float>::infinity();
+
+        const float dx = wp->x - x;
+        const float dy = wp->y - y;
+        return std::sqrt(dx * dx + dy * dy);
     }
 
     bool trySendReturnHomeGoal(const char* reason)
@@ -367,9 +393,13 @@ class SimpleDecisionNode : public rclcpp::Node
         if (msg->data.size() >= 3)
         {
             const int hp = static_cast<int>(msg->data[2]);
+            last_decision_hp_ = hp;
             if (isLowHp(hp))
             {
                 in_recovery_mode_ = true;
+                RCLCPP_WARN(this->get_logger(),
+                    "[LowHP] AutoAimCallback trigger: hp=%d, threshold=%d",
+                    hp, low_hp_return_threshold_);
                 (void)trySendReturnHomeGoal("AutoAimCallback");
                 return;
             }
@@ -643,64 +673,52 @@ class SimpleDecisionNode : public rclcpp::Node
             vision_valid, self_x, self_y, info.self_hp, wayPointID, in_recovery_mode_);
         last_known_waypoint_id_ = wayPointID;
 
-        int robot_mode = 0;
         int hp = info.self_hp;
-        int nowtime = info.game_time;
+        const float dist_to_center = distanceToWaypoint(center_waypoint_id_, self_x, self_y);
+        const bool near_center = std::isfinite(dist_to_center) && dist_to_center <= 1.0f;
 
-        bool at_home = (wayPointID == home_waypoint_id_);
-        if (at_home)
+        int target_waypoint = home_waypoint_id_;
+        const char* decision_name = "return_home_by_default";
+
+        if (hp == 400)
         {
-            in_recovery_mode_ = true;
-        }
-        else if (hp > recovery_hp_threshold_)
-        {
+            target_waypoint = center_waypoint_id_;
+            decision_name = "occupy_center_when_full_hp";
             in_recovery_mode_ = false;
         }
-
-        std::vector<rdsys::RobotPosition> friend_pos = info.friend_positions;
-        std::vector<rdsys::RobotPosition> enemy_pos = info.enemy_positions;
-        std::vector<int> availableDecisionID;
-        std::map<int, int> id_pos_f;
-        std::map<int, int> id_pos_e;
-
-        auto decision = rdsys_->decide(
-            wayPointID, robot_mode, hp, nowtime,
-            friend_pos, enemy_pos, availableDecisionID, id_pos_f, id_pos_e);
-
-        if (decision)
+        else if (isLowHp(hp))
         {
-            if (in_recovery_mode_ && hp >= 40 && hp <= recovery_hp_threshold_)
-            {
-                if (decision->name != "return_home_when_low_hp")
-                {
-                    RCLCPP_INFO(this->get_logger(), 
-                        "[Recovery] In recovery mode (hp=%d, at_home=%d), blocking combat decision: %s",
-                        hp, at_home, decision->name.c_str());
-                    decision = nullptr;
-                }
-            }
+            target_waypoint = home_waypoint_id_;
+            decision_name = "return_home_when_low_hp";
+            in_recovery_mode_ = true;
         }
-
-        if (decision)
+        else if (near_center)
         {
-            RCLCPP_INFO(this->get_logger(), 
-                "[Decision] Selected: name=%s, target_wp=%d, if_succession=%d, weight=%d",
-                decision->name.c_str(), decision->decide_wayPoint, 
-                decision->if_succession, decision->weight);
-            sendNavGoal(wayPointID, decision->decide_wayPoint, decision->if_succession);
+            target_waypoint = center_waypoint_id_;
+            decision_name = "hold_center_when_nearby";
+            in_recovery_mode_ = false;
         }
         else
         {
-            RCLCPP_WARN(this->get_logger(), "[Decision] No decision matched!");
+            target_waypoint = home_waypoint_id_;
+            decision_name = "return_home_by_default";
+            in_recovery_mode_ = true;
         }
+
+        RCLCPP_INFO(this->get_logger(),
+            "[Decision] Policy selected: name=%s, target_wp=%d, hp=%d, dist_to_center=%.2f, near_center=%d",
+            decision_name, target_waypoint, hp, dist_to_center, near_center);
+        last_decision_hp_ = hp;
+        sendNavGoal(wayPointID, target_waypoint, false);
     }
 
     // 函数功能：发送导航目标
     bool sendNavGoal(int current_waypoint, int target_waypoint, bool if_succession, bool force_send = false)
     {
         RCLCPP_INFO(this->get_logger(), 
-            "[SendNavGoal] ENTER: current_wp=%d, target_wp=%d, if_succession=%d, force_send=%d, has_saved_goal=%d",
-            current_waypoint, target_waypoint, if_succession, force_send, has_saved_goal_);
+            "[SendNavGoal] ENTER: current_wp=%d, target_wp=%d, if_succession=%d, force_send=%d, has_saved_goal=%d, hp=%d, low_hp_thr=%d, recovery=%d",
+            current_waypoint, target_waypoint, if_succession, force_send, has_saved_goal_,
+            last_decision_hp_, low_hp_return_threshold_, in_recovery_mode_);
         
         (void)current_waypoint;
         if (!nav_client_)
@@ -1041,4 +1059,3 @@ int main(int argc, char **argv)
     rclcpp::shutdown();
     return 0;
 }
-

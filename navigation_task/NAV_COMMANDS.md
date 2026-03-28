@@ -11,19 +11,30 @@ colcon build --packages-select fast_lio rm_nav_bringup rm_navigation
 
 ```bash
 source install/setup.bash
+bash kill_navigation.sh
 ros2 launch rm_nav_bringup bringup_real.launch.py world:=my_lab_world mode:=mapping lio:=fastlio lio_rviz:=False nav_rviz:=False
+```
+
+```bash
+
+ros2 run rviz2 rviz2 -d /home/nvidia/NJU-algorithm/navigation_task/src/rm_nav_bringup/rviz/nav2.rviz
 ```
 
 ### 保存地图
 
 在 RVIZ 可视化界面操作：
+- fixed-frame -> choose base_link
 - Panels → Add New Panel → slam_toolbox → SlamToolboxPlugin
 - Save Map & Serialize Map
+# ros2 run nav2_map_server map_saver_cli -f /home/nvidia/NJU-algorithm/navigation_task/my_map
+# ros2 service call /slam_toolbox/serialize_map slam_toolbox/srv/SerializePoseGraph "{filename: '/home/nvidia/NJU-algorithm/navigation_task/my_map_serialized'}"
 
 将pgm文件下载到PC端
 gimp map.pgm
 
 同时重命名.pgm、.data、.poesgraph、.yaml，并且修改yaml里面的 image:文件名
+
+colcon build
 
 
 
@@ -32,7 +43,7 @@ gimp map.pgm
 ```bash
 cd /home/nvidia/NJU-algorithm/navigation_task
 source install/setup.bash
-ros2 launch rm_nav_bringup bringup_real.launch.py world:=new_map mode:=nav lio:=fastlio localization:=slam_toolbox lio_rviz:=False nav_rviz:=False
+ros2 launch rm_nav_bringup bringup_real.launch.py world:=RM22 mode:=nav lio:=fastlio localization:=amcl lio_rviz:=False nav_rviz:=True
 ```
 ros2 launch rm_nav_bringup bringup_real.launch.py world:=new_map mode:=nav lio:=fastlio localization:=amcl lio_rviz:=False nav_rviz:=False
 ```

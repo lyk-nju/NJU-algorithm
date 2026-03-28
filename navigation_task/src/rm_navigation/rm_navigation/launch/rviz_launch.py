@@ -21,7 +21,7 @@ from launch.actions import DeclareLaunchArgument, EmitEvent, RegisterEventHandle
 from launch.conditions import IfCondition, UnlessCondition
 from launch.event_handlers import OnProcessExit
 from launch.events import Shutdown
-from launch.substitutions import LaunchConfiguration
+from launch.substitutions import LaunchConfiguration, PythonExpression
 from launch_ros.actions import Node
 from nav2_common.launch import ReplaceString
 
@@ -34,6 +34,10 @@ def generate_launch_description():
     namespace = LaunchConfiguration('namespace')
     use_namespace = LaunchConfiguration('use_namespace')
     rviz_config_file = LaunchConfiguration('rviz_config')
+    cpu_set = LaunchConfiguration('cpu_set')
+    taskset_prefix = PythonExpression([
+        "'taskset -c ", cpu_set, "' if '", cpu_set, "' else ''"
+    ])
 
     # Declare the launch arguments
     declare_namespace_cmd = DeclareLaunchArgument(
@@ -52,11 +56,16 @@ def generate_launch_description():
         default_value=os.path.join(bringup_dir, 'rviz', 'nav2.rviz'),
         description='Full path to the RVIZ config file to use')
 
+    declare_cpu_set_cmd = DeclareLaunchArgument(
+        'cpu_set', default_value='',
+        description='CPU affinity for rviz, e.g. 2-4')
+
     # Launch rviz
     start_rviz_cmd = Node(
         condition=UnlessCondition(use_namespace),
         package='rviz2',
         executable='rviz2',
+        prefix=taskset_prefix,
         arguments=['-d', rviz_config_file],
         output='screen')
 
@@ -68,6 +77,7 @@ def generate_launch_description():
         condition=IfCondition(use_namespace),
         package='rviz2',
         executable='rviz2',
+        prefix=taskset_prefix,
         namespace=namespace,
         arguments=['-d', namespaced_rviz_config_file],
         output='screen',
@@ -97,6 +107,7 @@ def generate_launch_description():
     ld.add_action(declare_namespace_cmd)
     ld.add_action(declare_use_namespace_cmd)
     ld.add_action(declare_rviz_config_file_cmd)
+    ld.add_action(declare_cpu_set_cmd)
 
     # Add any conditioned actions
     ld.add_action(start_rviz_cmd)

@@ -5,4 +5,4 @@ receive_port: /dev/ttyACM0
 yolo_model_path: /home/nvidia/NJU-algorithm/vision_task/armor_task/models/new.engine
 video_path : /home/nvidia/NJU-algorithm/vision_task/armor_task/assets/circular.avi
 config_path : /home/nvidia/NJU-algorithm/vision_task/armor_task/config/camera1.yaml
-bullet_speed : 20
+bullet_speed : 22

@@ -16,8 +16,8 @@ public:
         : Node("pose_initializer_node")
     {
         declare_parameter<std::string>("nav_namespace", "");
-        declare_parameter<double>("initial_pose.x", 0.0);
-        declare_parameter<double>("initial_pose.y", 0.0);
+        declare_parameter<double>("initial_pose.x", 1.0);
+        declare_parameter<double>("initial_pose.y", -1.0);
         declare_parameter<double>("initial_pose.theta", 0.0);
         declare_parameter<double>("delay", 1.0);
         declare_parameter<int>("publish_count", 1);

@@ -8,7 +8,7 @@
 
 namespace armor_task
 {
-Detector::Detector(const std::string &yolo_model_path) : input_width_(640), input_height_(640), confidence_threshold_(0.3f), nms_threshold_(0.5f), scale_(1.0f), pad_x_(0.0f), pad_y_(0.0f)
+Detector::Detector(const std::string &yolo_model_path) : input_width_(640), input_height_(640), confidence_threshold_(0.55f), nms_threshold_(0.5f), scale_(1.0f), pad_x_(0.0f), pad_y_(0.0f)
 {
     // 初始化类别名称 - 36个装甲板类别
     class_names_.resize(36);

@@ -2,9 +2,9 @@
   ros__parameters:
     nav_namespace: ""
     initial_pose:
-      x: -6.2
-      y: -0.33
-      theta: -0.08
-    delay: 8.0
+      x: 1.0
+      y: -1.0
+      theta: -1.57
+    delay: 2.0
     publish_count: 5
     publish_interval: 0.4

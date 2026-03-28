@@ -569,7 +569,7 @@ int main(int argc, char *argv[])
                 std::lock_guard<std::mutex> lock(imu_mutex);
                 if (has_latest_imu) {
                     bool self_is_red = tools::get_color_from_self_id(latest_judger_data);
-                    // std::cout << "is red: " << self_is_red << std::endl;
+                    std::cout << "is red: " << self_is_red << std::endl;
                     tracker.get_enemy_color(self_is_red);
                 }
             }

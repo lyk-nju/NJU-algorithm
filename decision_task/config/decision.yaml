@@ -14,8 +14,8 @@
     center_waypoint_id: 5
     position_check_threshold: 0.5
     position_check_activation_radius: 8.0
-    recovery_hp_threshold: 80
-    low_hp_return_threshold: 80
+    recovery_hp_threshold: 140
+    low_hp_return_threshold: 140
     require_amcl_ready_before_nav: true
     amcl_pose_timeout_sec: 1.5
     amcl_pose_min_samples: 3
@@ -24,6 +24,6 @@
     aborted_reinit_cooldown_sec: 2.0
     last_good_pose_max_age_sec: 8.0
     initial_pose:
-      x: 0.0
-      y: 0.0
-      theta: 0.0
+      x: 1.0
+      y: -1.0
+      theta: -1.57

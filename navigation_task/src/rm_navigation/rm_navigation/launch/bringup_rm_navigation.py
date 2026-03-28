@@ -7,7 +7,7 @@ from launch.actions import (DeclareLaunchArgument, GroupAction,
                             IncludeLaunchDescription, SetEnvironmentVariable)
 from launch.conditions import IfCondition
 from launch.launch_description_sources import PythonLaunchDescriptionSource
-from launch.substitutions import LaunchConfiguration
+from launch.substitutions import LaunchConfiguration, PythonExpression
 from launch_ros.actions import Node
 from launch_ros.actions import PushRosNamespace
 from nav2_common.launch import RewrittenYaml
@@ -29,6 +29,10 @@ def generate_launch_description():
     use_respawn = LaunchConfiguration('use_respawn')
     log_level = LaunchConfiguration('log_level')
     use_nav_rviz = LaunchConfiguration('nav_rviz')
+    cpu_set = LaunchConfiguration('cpu_set')
+    taskset_prefix = PythonExpression([
+        "'taskset -c ", cpu_set, "' if '", cpu_set, "' else ''"
+    ])
 
     remappings = [('/tf', 'tf'),
                   ('/tf_static', 'tf_static')]
@@ -99,6 +103,11 @@ def generate_launch_description():
         default_value='True',
         description='Visualize navigation2 if true')
 
+    declare_cpu_set_cmd = DeclareLaunchArgument(
+        'cpu_set',
+        default_value='',
+        description='CPU affinity for navigation processes, e.g. 2-4')
+
     # Specify the actions
     bringup_cmd_group = GroupAction([
         PushRosNamespace(
@@ -110,6 +119,7 @@ def generate_launch_description():
             name='nav2_container',
             package='rclcpp_components',
             executable='component_container_mt',
+            prefix=taskset_prefix,
             parameters=[configured_params, {'autostart': autostart}],
             arguments=['--ros-args', '--log-level', log_level],
             remappings=remappings,
@@ -120,6 +130,7 @@ def generate_launch_description():
             launch_arguments={'namespace': namespace,
                               'use_sim_time': use_sim_time,
                               'autostart': autostart,
+                              'cpu_set': cpu_set,
                               'params_file': params_file,
                               'use_composition': use_composition,
                               'use_respawn': use_respawn,
@@ -127,7 +138,8 @@ def generate_launch_description():
 
         IncludeLaunchDescription(
             PythonLaunchDescriptionSource(os.path.join(launch_dir, 'rviz_launch.py')),
-            condition=IfCondition(use_nav_rviz)
+            condition=IfCondition(use_nav_rviz),
+            launch_arguments={'cpu_set': cpu_set}.items()
         ),
     ])
 
@@ -149,6 +161,7 @@ def generate_launch_description():
     ld.add_action(declare_use_respawn_cmd)
     ld.add_action(declare_log_level_cmd)
     ld.add_action(declare_nav_rviz_cmd)
+    ld.add_action(declare_cpu_set_cmd)
 
     # Add the actions to launch all of the navigation nodes
     ld.add_action(bringup_cmd_group)

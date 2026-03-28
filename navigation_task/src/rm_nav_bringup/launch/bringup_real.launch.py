@@ -7,7 +7,7 @@ from launch import LaunchDescription
 from launch.actions import IncludeLaunchDescription, DeclareLaunchArgument, GroupAction, TimerAction, ExecuteProcess
 from launch_ros.actions import Node
 from launch.launch_description_sources import PythonLaunchDescriptionSource
-from launch.substitutions import LaunchConfiguration, PathJoinSubstitution, Command
+from launch.substitutions import LaunchConfiguration, PathJoinSubstitution, Command, PythonExpression
 from launch.conditions import LaunchConfigurationEquals, LaunchConfigurationNotEquals, IfCondition
 
 
@@ -21,6 +21,10 @@ def generate_launch_description():
     use_sim_time = LaunchConfiguration('use_sim_time')
     use_lio_rviz = LaunchConfiguration('lio_rviz')
     use_nav_rviz = LaunchConfiguration('nav_rviz')
+    nav_cpu_set = LaunchConfiguration('nav_cpu_set')
+    nav_taskset_prefix = PythonExpression([
+        "'taskset -c ", nav_cpu_set, "' if '", nav_cpu_set, "' else ''"
+    ])
 
     ################################ robot_description parameters start ###############################
     launch_params = yaml.safe_load(open(os.path.join(
@@ -106,6 +110,11 @@ def generate_launch_description():
         default_value='True',
         description='Visualize navigation2 if true')
 
+    declare_nav_cpu_set_cmd = DeclareLaunchArgument(
+        'nav_cpu_set',
+        default_value='',
+        description='CPU affinity for navigation-related processes, e.g. 2-4')
+
     declare_world_cmd = DeclareLaunchArgument(
         'world',
         default_value='328',
@@ -130,6 +139,7 @@ def generate_launch_description():
         package='robot_state_publisher',
         executable='robot_state_publisher',
         name='robot_state_publisher',
+        prefix=nav_taskset_prefix,
         parameters=[{
             'use_sim_time': use_sim_time,
             'robot_description': robot_description,
@@ -143,6 +153,7 @@ def generate_launch_description():
         package='livox_ros_driver2',
         executable='livox_ros_driver2_node',
         name='livox_lidar_publisher',
+        prefix=nav_taskset_prefix,
         output='screen',
         parameters=livox_ros2_params
     )
@@ -151,6 +162,7 @@ def generate_launch_description():
         package='imu_complementary_filter',
         executable='complementary_filter_node',
         name='complementary_filter_gain_node',
+        prefix=nav_taskset_prefix,
         output='screen',
         parameters=[
             {'do_bias_estimation': True},
@@ -167,12 +179,14 @@ def generate_launch_description():
     bringup_linefit_ground_segmentation_node = Node(
         package='linefit_ground_segmentation_ros',
         executable='ground_segmentation_node',
+        prefix=nav_taskset_prefix,
         output='screen',
         parameters=[segmentation_params]
     )
 
     bringup_pointcloud_to_laserscan_node = Node(
         package='pointcloud_to_laserscan', executable='pointcloud_to_laserscan_node',
+        prefix=nav_taskset_prefix,
         remappings=[('cloud_in',  ['/segmentation/obstacle']),
                     ('scan',  ['/scan'])],
         parameters=[{
@@ -200,6 +214,7 @@ def generate_launch_description():
         Node(
             package="tf2_ros",
             executable="static_transform_publisher",
+            prefix=nav_taskset_prefix,
             arguments=[
                 '--frame-id', 'odom',
                 '--child-frame-id', 'lidar_odom'
@@ -212,6 +227,7 @@ def generate_launch_description():
             Node(
                 package='fast_lio',
                 executable='fastlio_mapping',
+                prefix=nav_taskset_prefix,
                 parameters=[
                     fastlio_mid360_params,
                     {use_sim_time: use_sim_time}
@@ -221,6 +237,7 @@ def generate_launch_description():
             Node(
                 package='rviz2',
                 executable='rviz2',
+                prefix=nav_taskset_prefix,
                 arguments=['-d', fastlio_rviz_cfg_dir],
                 condition = IfCondition(use_lio_rviz),
             ),
@@ -233,6 +250,7 @@ def generate_launch_description():
                 package='point_lio',
                 executable='pointlio_mapping',
                 name='laserMapping',
+                prefix=nav_taskset_prefix,
                 output='screen',
                 parameters=[
                     pointlio_mid360_params,
@@ -252,6 +270,7 @@ def generate_launch_description():
             Node(
                 package='rviz2',
                 executable='rviz2',
+                prefix=nav_taskset_prefix,
                 arguments=['-d', pointlio_rviz_cfg_dir],
                 condition = IfCondition(use_lio_rviz),
             )
@@ -266,6 +285,7 @@ def generate_launch_description():
                 package='slam_toolbox',
                 executable='localization_slam_toolbox_node',
                 name='slam_toolbox',
+                prefix=nav_taskset_prefix,
                 parameters=[
                     slam_toolbox_localization_file_dir,
                     {'use_sim_time': use_sim_time,
@@ -279,6 +299,7 @@ def generate_launch_description():
                 condition = LaunchConfigurationEquals('localization', 'amcl'),
                 launch_arguments = {
                     'use_sim_time': use_sim_time,
+                    'cpu_set': nav_cpu_set,
                     'params_file': nav2_params_file_dir,
                     'map': nav2_map_dir}.items()
             ),
@@ -290,6 +311,7 @@ def generate_launch_description():
                         condition=LaunchConfigurationEquals('localization', 'icp'),
                         package='icp_registration',
                         executable='icp_registration_node',
+                        prefix=nav_taskset_prefix,
                         output='screen',
                         parameters=[
                             icp_registration_params_dir,
@@ -306,6 +328,7 @@ def generate_launch_description():
                 condition = LaunchConfigurationNotEquals('localization', 'slam_toolbox'),
                 launch_arguments={
                     'use_sim_time': use_sim_time,
+                    'cpu_set': nav_cpu_set,
                     'map': nav2_map_dir,
                     'params_file': nav2_params_file_dir,
                     'container_name': 'nav2_container'}.items())
@@ -315,6 +338,7 @@ def generate_launch_description():
     bringup_fake_vel_transform_node = Node(
         package='fake_vel_transform',
         executable='fake_vel_transform_node',
+        prefix=nav_taskset_prefix,
         output='screen',
         parameters=[{
             'use_sim_time': use_sim_time,
@@ -327,6 +351,7 @@ def generate_launch_description():
         package='slam_toolbox',
         executable='async_slam_toolbox_node',
         name='slam_toolbox',
+        prefix=nav_taskset_prefix,
         parameters=[
             slam_toolbox_mapping_file_dir,
             {'use_sim_time': use_sim_time}
@@ -337,6 +362,7 @@ def generate_launch_description():
         PythonLaunchDescriptionSource(os.path.join(navigation2_launch_dir, 'bringup_rm_navigation.py')),
         launch_arguments={
             'use_sim_time': use_sim_time,
+            'cpu_set': nav_cpu_set,
             'map': nav2_map_dir,
             'params_file': nav2_params_file_dir,
             'nav_rviz': use_nav_rviz}.items()
@@ -348,6 +374,7 @@ def generate_launch_description():
     ld.add_action(declare_use_sim_time_cmd)
     ld.add_action(declare_use_lio_rviz_cmd)
     ld.add_action(declare_nav_rviz_cmd)
+    ld.add_action(declare_nav_cpu_set_cmd)
     ld.add_action(declare_world_cmd)
     ld.add_action(declare_mode_cmd)
     ld.add_action(declare_localization_cmd)

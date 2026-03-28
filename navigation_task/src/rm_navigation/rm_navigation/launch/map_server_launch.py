@@ -26,6 +26,10 @@ def generate_launch_description():
     container_name_full = (namespace, '/', container_name)
     use_respawn = LaunchConfiguration('use_respawn')
     log_level = LaunchConfiguration('log_level')
+    cpu_set = LaunchConfiguration('cpu_set')
+    taskset_prefix = PythonExpression([
+        "'taskset -c ", cpu_set, "' if '", cpu_set, "' else ''"
+    ])
 
     lifecycle_nodes = ['map_server']
 
@@ -87,6 +91,10 @@ def generate_launch_description():
         'log_level', default_value='info',
         description='log level')
 
+    declare_cpu_set_cmd = DeclareLaunchArgument(
+        'cpu_set', default_value='',
+        description='CPU affinity for map server processes, e.g. 2-4')
+
     load_nodes = GroupAction(
         condition=IfCondition(PythonExpression(['not ', use_composition])),
         actions=[
@@ -94,6 +102,7 @@ def generate_launch_description():
                 package='nav2_map_server',
                 executable='map_server',
                 name='map_server',
+                prefix=taskset_prefix,
                 output='screen',
                 respawn=use_respawn,
                 respawn_delay=2.0,
@@ -105,6 +114,7 @@ def generate_launch_description():
                 package='nav2_lifecycle_manager',
                 executable='lifecycle_manager',
                 name='lifecycle_manager_localization',
+                prefix=taskset_prefix,
                 output='screen',
                 arguments=['--ros-args', '--log-level', log_level],
                 parameters=[{'use_sim_time': use_sim_time},
@@ -150,6 +160,7 @@ def generate_launch_description():
     ld.add_action(declare_container_name_cmd)
     ld.add_action(declare_use_respawn_cmd)
     ld.add_action(declare_log_level_cmd)
+    ld.add_action(declare_cpu_set_cmd)
 
     # Add the actions to launch all of the localiztion nodes
     ld.add_action(load_nodes)
