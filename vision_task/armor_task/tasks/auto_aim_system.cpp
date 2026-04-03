@@ -66,10 +66,11 @@ size_t IMUHistory::size() const
 }
 
 AutoAimSystem::AutoAimSystem(const std::string &yolo_model_path, const std::string &config_path, double bullet_speed)
-    : detector_(yolo_model_path),
-      pnp_solver_(config_path),
-      tracker_(config_path, pnp_solver_),
-      aimer_(config_path),
+    : config_(YAML::LoadFile(config_path)),
+      detector_(yolo_model_path),
+      pnp_solver_(config_),
+      tracker_(config_, pnp_solver_),
+      aimer_(config_),
       bullet_speed_(bullet_speed),
       last_quat_(1.0, 0.0, 0.0, 0.0)
 {
@@ -80,6 +81,12 @@ void AutoAimSystem::updateImu(const Eigen::Quaterniond &quat, double yaw, double
     imu_history_.push(quat, yaw, pitch);
 }
 
+void AutoAimSystem::updateJudgerData(const io::JudgerData &judger_data)
+{
+    bool self_is_red = tools::get_color_from_self_id(judger_data);
+    tracker_.get_enemy_color(self_is_red);
+}
+
 ProcessResult AutoAimSystem::processFrame(const cv::Mat &img, std::chrono::steady_clock::time_point image_timestamp)
 {
     ProcessResult result;
@@ -88,7 +95,7 @@ ProcessResult AutoAimSystem::processFrame(const cv::Mat &img, std::chrono::stead
     result.detect_time_ms = 0.0;
     result.track_time_ms = 0.0;
     result.aim_time_ms = 0.0;
-    result.tracker_state = tracker_.state();
+    result.tracker_state = tracker_.state_enum();
     result.is_switching = false;
 
     // 1. 更新云台到世界坐标系的旋转（从 IMU 历史查询图像时刻的 IMU）
@@ -123,7 +130,7 @@ ProcessResult AutoAimSystem::processFrame(const cv::Mat &img, std::chrono::stead
     auto track_end = std::chrono::steady_clock::now();
     result.track_time_ms = std::chrono::duration<double, std::milli>(track_end - track_start).count();
     result.targets = targets;
-    result.tracker_state = tracker_.state();
+    result.tracker_state = tracker_.state_enum();
 
     if (!targets.empty())
     {
@@ -134,8 +141,8 @@ ProcessResult AutoAimSystem::processFrame(const cv::Mat &img, std::chrono::stead
     if (!targets.empty())
     {
         auto aim_start = std::chrono::steady_clock::now();
-        std::list<Target> target_list(targets.begin(), targets.end());
-        result.cmd = aimer_.aim(target_list, track_end, bullet_speed_);
+        result.cmd = aimer_.aim(targets.front(), track_end, bullet_speed_);
+        result.cmd.shoot = result.cmd.valid;  // aimer always returns shoot=false; override here
         result.aim_point = aimer_.debug_aim_point;
         result.aim_time_ms = std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - aim_start).count();
     }

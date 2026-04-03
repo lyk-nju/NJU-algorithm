@@ -30,6 +30,7 @@ Detector::Detector(const std::string &yolo_model_path) : input_width_(640), inpu
 
     if (yolo_model_path.find(".engine") != std::string::npos)
     {
+#if ARMOR_TASK_WITH_TENSORRT_CUDA
         is_trt_ = true;
         std::cout << "Loading TensorRT engine: " << yolo_model_path << std::endl;
         std::ifstream file(yolo_model_path, std::ios::binary);
@@ -75,6 +76,10 @@ Detector::Detector(const std::string &yolo_model_path) : input_width_(640), inpu
         cpu_output_buffer_.resize(output_size_);
         std::cout << "TensorRT engine loaded successfully." << std::endl;
         return;
+#else
+        (void)yolo_model_path;
+        throw std::runtime_error("TensorRT engine provided but ARMOR_TASK_WITH_TENSORRT_CUDA=OFF");
+#endif
     }
 
     // 加载YOLO模型
@@ -91,20 +96,23 @@ Detector::Detector(const std::string &yolo_model_path) : input_width_(640), inpu
         std::cout << "YOLO model loaded successfully from: " << yolo_model_path << std::endl;
     }
 
-    // 步骤 3: 设置 CUDA 后端和目标（仅在模型加载成功后）
+    // 步骤 3: 设置推理后端
+#if ARMOR_TASK_WITH_TENSORRT_CUDA
     try
     {
-        yolo_net_.setPreferableBackend(cv::dnn::DNN_BACKEND_CUDA); // 后端
-        yolo_net_.setPreferableTarget(cv::dnn::DNN_TARGET_CUDA);   // 目标
-
+        yolo_net_.setPreferableBackend(cv::dnn::DNN_BACKEND_CUDA);
+        yolo_net_.setPreferableTarget(cv::dnn::DNN_TARGET_CUDA);
         std::cout << "YOLO model configured for CUDA GPU acceleration (FP32)." << std::endl;
     }
     catch (const cv::Exception &e)
     {
-        std::cerr << "Fatal: CUDA setting failed. Please check your OpenCV build and CUDA environment. Error: " << e.what() << std::endl;
-        // 如果 CUDA 设置失败，程序应该报错并退出，避免运行在慢速的 CPU 模式
+        std::cerr << "Fatal: CUDA setting failed. Error: " << e.what() << std::endl;
         throw;
     }
+#else
+    yolo_net_.setPreferableBackend(cv::dnn::DNN_BACKEND_OPENCV);
+    yolo_net_.setPreferableTarget(cv::dnn::DNN_TARGET_CPU);
+#endif
 
     // 检查模型是否成功加载
     if (yolo_net_.empty())
@@ -115,16 +123,21 @@ Detector::Detector(const std::string &yolo_model_path) : input_width_(640), inpu
     {
         std::cout << "YOLO model loaded successfully from: " << yolo_model_path << std::endl;
     }
-    size_t max_image_size = 2560*1440*3;
-    cudaMalloc((void**)&device_image_buffer_,max_image_size);
-    device_image_buffer_size_=max_image_size;
+    // 仅 TRT/CUDA 路径需要额外的 device buffer
+#if ARMOR_TASK_WITH_TENSORRT_CUDA
+    size_t max_image_size = 2560 * 1440 * 3;
+    cudaMalloc((void**)&device_image_buffer_, max_image_size);
+    device_image_buffer_size_ = max_image_size;
+#endif
     
 }
 
 Detector::~Detector()
 {
+#if ARMOR_TASK_WITH_TENSORRT_CUDA
     if (is_trt_)
     {
+        release_decode_kernel_resources();
         if (device_input_buffer_) cudaFree(device_input_buffer_);
         if (device_output_buffer_) cudaFree(device_output_buffer_);
         if (device_image_buffer_) cudaFree(device_image_buffer_);
@@ -133,6 +146,7 @@ Detector::~Detector()
         delete engine_;
         delete runtime_;
     }
+#endif
 }
 
 ArmorArray Detector::detect(const cv::Mat &frame)
@@ -141,52 +155,35 @@ ArmorArray Detector::detect(const cv::Mat &frame)
     cv::Mat input_blob = preprocess(frame, input_width_, input_height_);
 
     // 模块二：搜索装甲板
-    return search_armors(frame, cv::Mat());
+    return search_armors(frame, input_blob);
 }
-
-// cv::Mat Detector::preprocess(const cv::Mat &input_image, int target_width, int target_height)
-// {
-   
-//     // 确保输入图像是有效的
-//     if (input_image.empty())
-//     {
-//         std::cerr << "Error: Empty input image for preprocessing" << std::endl;
-//         return cv::Mat();
-//     }
-
-//     // 与训练时一致的 letterbox 预处理（保持长宽比，四周 zero padding）
-//     const int src_w = input_image.cols;
-//     const int src_h = input_image.rows;
-
-//     // 缩放比例：短边对齐到 target，长边按比例缩放
-//     float r_w = static_cast<float>(target_width) / static_cast<float>(src_w);
-//     float r_h = static_cast<float>(target_height) / static_cast<float>(src_h);
-//     scale_ = std::min(r_w, r_h);
-
-//     int new_unpad_w = static_cast<int>(std::round(src_w * scale_));
-//     int new_unpad_h = static_cast<int>(std::round(src_h * scale_));
-
-//     pad_x_ = (target_width - new_unpad_w) * 0.5f;
-//     pad_y_ = (target_height - new_unpad_h) * 0.5f;
-
-//     // 图像缩放到 new_unpad，并复制到 640x640 的黑色背景上
-//     cv::Mat resized;
-//     cv::resize(input_image, resized, cv::Size(new_unpad_w, new_unpad_h));
-
-//     cv::Mat padded(target_height, target_width, input_image.type(), cv::Scalar(0,0,0));
-//     cv::Rect roi(static_cast<int>(pad_x_), static_cast<int>(pad_y_), new_unpad_w, new_unpad_h);
-//     resized.copyTo(padded(roi));
-    
-//     // 创建输入 blob: 归一化 + 通道交换
-//     cv::Mat blob;
-//     cv::dnn::blobFromImage(padded, blob, 1.0f / 255.0f, cv::Size(target_width, target_height), cv::Scalar(0, 0, 0), true, false, CV_32F);
-    
-    
-//     return blob;
-// }
 cv::Mat Detector::preprocess(const cv::Mat &input_image, int target_width, int target_height)
 {
     if (input_image.empty()) return cv::Mat();
+
+#if !ARMOR_TASK_WITH_TENSORRT_CUDA
+    // CPU-only: 与训练一致的 letterbox + blob
+    const int src_w = input_image.cols;
+    const int src_h = input_image.rows;
+    float r_w = static_cast<float>(target_width) / static_cast<float>(src_w);
+    float r_h = static_cast<float>(target_height) / static_cast<float>(src_h);
+    scale_ = std::min(r_w, r_h);
+
+    int new_unpad_w = static_cast<int>(std::round(src_w * scale_));
+    int new_unpad_h = static_cast<int>(std::round(src_h * scale_));
+    pad_x_ = (target_width - new_unpad_w) * 0.5f;
+    pad_y_ = (target_height - new_unpad_h) * 0.5f;
+
+    cv::Mat resized;
+    cv::resize(input_image, resized, cv::Size(new_unpad_w, new_unpad_h));
+    cv::Mat padded(target_height, target_width, input_image.type(), cv::Scalar(0, 0, 0));
+    cv::Rect roi(static_cast<int>(pad_x_), static_cast<int>(pad_y_), new_unpad_w, new_unpad_h);
+    resized.copyTo(padded(roi));
+
+    cv::Mat blob;
+    cv::dnn::blobFromImage(padded, blob, 1.0f / 255.0f, cv::Size(target_width, target_height), cv::Scalar(0, 0, 0), true, false, CV_32F);
+    return blob;
+#else
 
     // 1. 懒加载：分配 GPU 内存用于存原始图片
     // 计算需要的字节数 (Height * Step)
@@ -233,77 +230,14 @@ cv::Mat Detector::preprocess(const cv::Mat &input_image, int target_width, int t
 
     // 返回空矩阵，告诉调用者不用管 CPU 的 blob 了
     return cv::Mat(); 
+#endif
 }
 
-// ArmorArray Detector::search_armors(const cv::Mat &frame, const cv::Mat &input_blob)
-// {
-    
-//     ArmorArray detected_armors;
-//     std::vector<cv::Mat> outputs;
 
-//     if (is_trt_)
-//     {
-    
-//         cudaMemcpyAsync(device_input_buffer_, input_blob.ptr<float>(), input_blob.total() * sizeof(float), cudaMemcpyHostToDevice, stream_);
-        
-        
-//         context_->setTensorAddress(input_name_.c_str(), device_input_buffer_);
-//         context_->setTensorAddress(output_name_.c_str(), device_output_buffer_);
-        
-        
-//         context_->enqueueV3(stream_);
-         
-        
-//         cudaMemcpyAsync(cpu_output_buffer_.data(), device_output_buffer_, output_size_ * sizeof(float), cudaMemcpyDeviceToHost, stream_);
-//         cudaStreamSynchronize(stream_);
-       
-        
-
-	
-//         nvinfer1::Dims outDims = engine_->getTensorShape(output_name_.c_str());
-//         std::vector<int> sizes;
-//         for(int i=0; i<outDims.nbDims; i++) sizes.push_back(outDims.d[i]);
-        
-        
-//         cv::Mat outMat(sizes, CV_32F, cpu_output_buffer_.data());
-//         outputs.push_back(outMat.clone());
-         
-        
-       
-//     }
-//     else
-//     {
-//         // 设置输入并运行网络
-//         yolo_net_.setInput(input_blob);
-
-//         try
-//         {
-//             // 获取输出层名称
-//             std::vector<std::string> outNames = yolo_net_.getUnconnectedOutLayersNames();
-//             yolo_net_.forward(outputs, outNames);
-//         }
-//         catch (const cv::Exception &e)
-//         {
-//             std::cerr << "Error during DNN forward pass: " << e.what() << std::endl;
-//             return detected_armors;
-//         }
-//     }
 
      
 
-//     if (outputs.empty())
-//     {
-//         std::cerr << "Error: No outputs from the network." << std::endl;
-//         return detected_armors;
-//     }
 
-//     const cv::Mat &detection_output = outputs[0];
-
-//     if (detection_output.empty())
-//     {
-//         std::cerr << "Error: Empty detection output." << std::endl;
-//         return detected_armors;
-//     }
 
  
 //     // 根据输出张量的维度进行不同的处理
@@ -379,56 +313,114 @@ cv::Mat Detector::preprocess(const cv::Mat &input_image, int target_width, int t
 //         std::vector<int> indices;
 //         cv::dnn::NMSBoxes(boxes, confidences, confidence_threshold_, nms_threshold_, indices);
 
-//         // 为装甲板分配ID并创建对象
-//         int armor_id = 0;
-//         for (size_t i = 0; i < indices.size(); ++i)
-//         {
-//             int idx = indices[i];
-//             cv::Rect box = boxes[idx];
-//             int class_id = class_ids[idx];
-//             float conf = confidences[idx];
-//             std::vector<cv::Point2f> corners = armor_corners[idx];
-
-//             // 确保类别ID在范围内且边界框有效
-//             if (class_id < static_cast<int>(class_names_.size()) && box.width > 0 && box.height > 0 && box.x >= 0 && box.y >= 0 && box.x + box.width < frame.cols && box.y + box.height < frame.rows)
-//             {
-//                 // 从角点提取灯条信息
-//                 auto lightbars = extract_lightbars_from_corners(corners);
-
-//                 // 创建装甲板对象
-//                 Armor armor(lightbars.first, lightbars.second, armor_id++, box);
-//                 armor.confidence = conf;
-//                 armor.color = get_armor_color(class_id);
-//                 armor.corners = corners; // 保存角点信息
-
-//                 // 从类别ID提取数字信息
-//                 if (class_id >= 0 && class_id < 18)
-//                 { // 只有装甲板类别才有数字
-//                     if (class_id < 9)
-//                     {
-//                         armor.car_num = class_id; // 蓝色装甲板 1-9
-//                     }
-//                     else
-//                     {
-//                         armor.car_num = (class_id - 9); // 红色装甲板 1-9
-//                     }
-//                 }
-//                 else
-//                 {
-//                     armor.car_num = -1; // 非装甲板
-//                 }
-
-//                 detected_armors.push_back(armor);
-//             }
-//         }
-//     }
-
-
-//     return detected_armors;
-// }
 ArmorArray Detector::search_armors(const cv::Mat &frame, const cv::Mat &input_blob)
 {
     ArmorArray detected_armors;
+
+#if !ARMOR_TASK_WITH_TENSORRT_CUDA
+    std::vector<cv::Mat> outputs;
+    yolo_net_.setInput(input_blob);
+    try
+    {
+        yolo_net_.forward(outputs, yolo_net_.getUnconnectedOutLayersNames());
+    }
+    catch (const cv::Exception &e)
+    {
+        std::cerr << "Error during DNN forward pass: " << e.what() << std::endl;
+        return detected_armors;
+    }
+    if (outputs.empty() || outputs[0].empty()) return detected_armors;
+
+    float *output_data = reinterpret_cast<float *>(outputs[0].data);
+    const int num_anchors = 8400;
+    const int stride = num_anchors;
+
+    std::vector<int> class_ids;
+    std::vector<float> confidences;
+    std::vector<cv::Rect> boxes;
+    std::vector<std::vector<cv::Point2f>> armor_corners;
+    boxes.reserve(100);
+    class_ids.reserve(100);
+    confidences.reserve(100);
+    armor_corners.reserve(100);
+
+    float *p_x = output_data + 0 * stride;
+    float *p_y = output_data + 1 * stride;
+    float *p_w = output_data + 2 * stride;
+    float *p_h = output_data + 3 * stride;
+    float *p_classes = output_data + 4 * stride;
+    float *p_landmarks = output_data + 40 * stride;
+
+    for (int i = 0; i < num_anchors; ++i)
+    {
+        float max_score = -1.0f;
+        int max_class_id = -1;
+        for (int c = 0; c < 36; ++c)
+        {
+            float score = p_classes[c * stride + i];
+            if (score > max_score)
+            {
+                max_score = score;
+                max_class_id = c;
+            }
+        }
+        if (max_score <= confidence_threshold_) continue;
+
+        float cx = p_x[i];
+        float cy = p_y[i];
+        float w = p_w[i];
+        float h = p_h[i];
+
+        float left = (cx - 0.5f * w - pad_x_) / scale_;
+        float top = (cy - 0.5f * h - pad_y_) / scale_;
+        float width = w / scale_;
+        float height = h / scale_;
+
+        std::vector<cv::Point2f> corners(4);
+        for (int k = 0; k < 4; ++k)
+        {
+            float kx = p_landmarks[(k * 2) * stride + i];
+            float ky = p_landmarks[(k * 2 + 1) * stride + i];
+            corners[k].x = (kx - pad_x_) / scale_;
+            corners[k].y = (ky - pad_y_) / scale_;
+        }
+
+        boxes.push_back(cv::Rect(left, top, width, height));
+        class_ids.push_back(max_class_id);
+        confidences.push_back(max_score);
+        armor_corners.push_back(corners);
+    }
+
+    std::vector<int> indices;
+    cv::dnn::NMSBoxes(boxes, confidences, confidence_threshold_, nms_threshold_, indices);
+
+    int id_counter = 0;
+    for (int idx : indices)
+    {
+        cv::Rect box = boxes[idx];
+        if (box.x < 0 || box.y < 0 || box.x + box.width >= frame.cols || box.y + box.height >= frame.rows) continue;
+
+        int class_id = class_ids[idx];
+        auto lightbars = extract_lightbars_from_corners(armor_corners[idx]);
+        Armor armor(lightbars.first, lightbars.second, id_counter++, box);
+        armor.confidence = confidences[idx];
+        armor.color = get_armor_color(class_id);
+        armor.corners = armor_corners[idx];
+
+        if (class_id >= 0 && class_id < 18)
+        {
+            armor.car_num = (class_id < 9) ? class_id : (class_id - 9);
+        }
+        else
+        {
+            armor.car_num = -1;
+        }
+
+        detected_armors.push_back(armor);
+    }
+
+    return detected_armors;
+#else
 
     // 1. 推理 (Inference)
     if (is_trt_)
@@ -535,171 +527,10 @@ ArmorArray Detector::search_armors(const cv::Mat &frame, const cv::Mat &input_bl
         detected_armors.push_back(armor);
     }
 
-    if (!detected_armors.empty()) {
-        std::cout << "[Detector] Detected " << detected_armors.size() << " armor(s)" << std::endl;
-        for (const auto& armor : detected_armors) {
-            std::string color_str = (armor.color == blue) ? "blue" : (armor.color == red) ? "red" : "purple";
-            std::cout << "  - Detect ID: " << armor.detect_id 
-                      << ", Car Num: " << armor.car_num
-                      << ", Color: " << color_str
-                      << ", Confidence: " << armor.confidence << std::endl;
-        }
-    }
-
     return detected_armors;
+#endif
 }
-// ArmorArray Detector::search_armors(const cv::Mat &frame, const cv::Mat &input_blob)
-// {
-//     ArmorArray detected_armors;
 
-//     // 1. 推理 (Inference)
-//     if (is_trt_)
-//     {
-//         // Host -> Device
-//         cudaMemcpyAsync(device_input_buffer_, input_blob.ptr<float>(), input_blob.total() * sizeof(float), cudaMemcpyHostToDevice, stream_);
-        
-//         // 推理
-//         context_->setTensorAddress(input_name_.c_str(), device_input_buffer_);
-//         context_->setTensorAddress(output_name_.c_str(), device_output_buffer_);
-//         context_->enqueueV3(stream_);
-        
-//         // Device -> Host
-//         cudaMemcpyAsync(cpu_output_buffer_.data(), device_output_buffer_, output_size_ * sizeof(float), cudaMemcpyDeviceToHost, stream_);
-//         cudaStreamSynchronize(stream_);
-//     }
-//     else
-//     {
-//         // 保持原有的 OpenCV 推理逻辑作为 fallback
-//         std::vector<cv::Mat> outputs;
-//         yolo_net_.setInput(input_blob);
-//         yolo_net_.forward(outputs, yolo_net_.getUnconnectedOutLayersNames());
-//         if (outputs.empty()) return detected_armors;
-//         // 将 OpenCV 输出的数据拷贝到 cpu_output_buffer_ 以统一处理逻辑
-//         // 注意：此处仅为兼容代码，实际使用建议全程 TensorRT
-//         float* data = (float*)outputs[0].data;
-//         size_t size = outputs[0].total();
-//         cpu_output_buffer_.assign(data, data + size);
-//     }
-
-//     // 2. 后处理 (Post-processing) - 核心优化
-//     // 假设输出形状: [Batch, Channels, Anchors] -> [1, 48, 8400]
-//     // 内存布局: Channel 0 的 8400 个数, Channel 1 的 8400 个数...
-//     
-    
-//     float* output_data = cpu_output_buffer_.data();
-//     int num_channels = 48; // 4(bbox) + 36(cls) + 8(landmarks)
-//     int num_anchors = 8400;
-//     int stride = num_anchors; // 跳到下一个 Channel 需要的步长
-
-//     std::vector<int> class_ids;
-//     std::vector<float> confidences;
-//     std::vector<cv::Rect> boxes;
-//     std::vector<std::vector<cv::Point2f>> armor_corners;
-
-//     // 预分配内存，避免 vector 扩容开销
-//     boxes.reserve(100);
-//     class_ids.reserve(100);
-//     confidences.reserve(100);
-//     armor_corners.reserve(100);
-
-//     // 指针预计算
-//     // 0:x, 1:y, 2:w, 3:h
-//     float* p_x = output_data + 0 * stride;
-//     float* p_y = output_data + 1 * stride;
-//     float* p_w = output_data + 2 * stride;
-//     float* p_h = output_data + 3 * stride;
-//     // 4~39: classes
-//     float* p_classes = output_data + 4 * stride;
-//     // 40~47: landmarks
-//     float* p_landmarks = output_data + 40 * stride;
-
-//     for (int i = 0; i < num_anchors; ++i)
-//     {
-//         // --- 步骤 2.1: 快速找到最大置信度 ---
-//         // 也就是原来的 cv::minMaxLoc，现在用纯指针循环
-//         float max_score = -1.0f;
-//         int max_class_id = -1;
-
-//         // 遍历 36 个类别
-//         for (int c = 0; c < 36; ++c)
-//         {
-//             // 访问第 c 个类别的第 i 个 Anchor
-//             // p_classes 指向第4行(第一个类别行)，加上 c*stride 跳到对应类别行
-//             float score = p_classes[c * stride + i]; 
-//             if (score > max_score)
-//             {
-//                 max_score = score;
-//                 max_class_id = c;
-//             }
-//         }
-
-//         // --- 步骤 2.2: 阈值筛选 ---
-//         if (max_score > confidence_threshold_)
-//         {
-//             // 只有当置信度足够高时，才去计算复杂的坐标，节省算力
-//             float cx = p_x[i];
-//             float cy = p_y[i];
-//             float w = p_w[i];
-//             float h = p_h[i];
-
-//             // 还原 BBox (反变换)
-//             float left = (cx - 0.5f * w - pad_x_) / scale_;
-//             float top  = (cy - 0.5f * h - pad_y_) / scale_;
-//             float width = w / scale_;
-//             float height = h / scale_;
-
-//             // 还原关键点
-//             std::vector<cv::Point2f> corners(4);
-//             for (int k = 0; k < 4; ++k)
-//             {
-//                 float kx = p_landmarks[(k * 2) * stride + i];
-//                 float ky = p_landmarks[(k * 2 + 1) * stride + i];
-//                 corners[k].x = (kx - pad_x_) / scale_;
-//                 corners[k].y = (ky - pad_y_) / scale_;
-//             }
-
-//             boxes.push_back(cv::Rect(left, top, width, height));
-//             class_ids.push_back(max_class_id);
-//             confidences.push_back(max_score);
-//             armor_corners.push_back(corners);
-//         }
-//     }
-
-//     // 3. NMS (非极大值抑制)
-//     std::vector<int> indices;
-//     cv::dnn::NMSBoxes(boxes, confidences, confidence_threshold_, nms_threshold_, indices);
-
-//     // 4. 封装结果
-//     int id_counter = 0;
-//     for (int idx : indices)
-//     {
-//         // 边界检查（放在最后做，因为 NMS 之后框很少，检查开销小）
-//         cv::Rect box = boxes[idx];
-//         if (box.x < 0 || box.y < 0 || box.x + box.width >= frame.cols || box.y + box.height >= frame.rows)
-//             continue;
-
-//         int class_id = class_ids[idx];
-//         // 这里的逻辑和你原代码保持一致
-//         auto lightbars = extract_lightbars_from_corners(armor_corners[idx]);
-//         Armor armor(lightbars.first, lightbars.second, id_counter++, box);
-//         armor.confidence = confidences[idx];
-//         armor.color = get_armor_color(class_id);
-//         armor.corners = armor_corners[idx];
-        
-//         if (class_id >= 0 && class_id < 18) {
-//              armor.car_num = (class_id < 9) ? class_id : (class_id - 9); // 1-9
-//              // 注意：这里需要确认你的 car_num 是存 1-9 还是 0-8，你的原代码逻辑有点混
-//              // 原代码: class_id 0->1, 8->9. 
-//              armor.car_num += 1; // 如果你的 Armor 结构体定义 car_num 1 就是数字1
-//         } else {
-//              armor.car_num = -1;
-//         }
-        
-//         detected_armors.push_back(armor);
-//     }
-
-//     return detected_armors;
-// }
 std::pair<LightBar, LightBar> Detector::extract_lightbars_from_corners(const std::vector<cv::Point2f> &corners)
 {
     LightBar left_lightbar, right_lightbar;

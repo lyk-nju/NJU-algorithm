@@ -1,10 +1,7 @@
 #include "../include/armor.hpp"
 #include "../tools/draw.hpp"
-#include "../tools/pharser.hpp"
-#include "aimer.hpp"
-#include "detector.hpp"
-#include "pnp_solver.hpp"
-#include "tracker.hpp"
+#include "../tools/parser.hpp"
+#include "auto_aim_system.hpp"
 #include <atomic>
 #include <Eigen/Dense>
 #include <chrono>
@@ -101,11 +98,8 @@ int main(int argc, char *argv[])
         const cv::Mat &camera_matrix = camera_params.first;
         const cv::Mat &distort_coeffs = camera_params.second;
 
-        Detector detector(model_path);
-        PnpSolver pnp_solver(config_path);
-        pnp_solver.set_R_gimbal2world(Eigen::Quaterniond(1.0, 0.0, 0.0, 0.0));
-        Tracker tracker(config_path, pnp_solver);
-        Aimer aimer(config_path);
+        AutoAimSystem auto_aim(model_path, config_path, bullet_speed);
+        auto_aim.updateImu(Eigen::Quaterniond(1.0, 0.0, 0.0, 0.0), 0.0, 0.0);
 
         cv::VideoCapture cap(input_video_path);
         if (!cap.isOpened())
@@ -198,41 +192,22 @@ int main(int argc, char *argv[])
 
             StageStats stats;
             stats.fps = fps;
-            ArmorArray detected_armors;
-            std::vector<Target> targets;
-            std::optional<io::Command> latest_autoaim_cmd;
-            AimPoint latest_aim_point{};
-
-            auto detect_begin = std::chrono::steady_clock::now();
-            detected_armors = detector.detect(display_frame);
-            auto detect_end = std::chrono::steady_clock::now();
-            stats.detect_ms = std::chrono::duration<double, std::milli>(detect_end - detect_begin).count();
-
-            pnp_solver.set_R_gimbal2world(Eigen::Quaterniond(1.0, 0.0, 0.0, 0.0));
-            auto track_begin = std::chrono::steady_clock::now();
-            targets = tracker.track(detected_armors, frame_time);
-            auto track_end = std::chrono::steady_clock::now();
-            stats.track_ms = std::chrono::duration<double, std::milli>(track_end - track_begin).count();
-
-            if (!targets.empty())
-            {
-                auto aim_begin = std::chrono::steady_clock::now();
-                std::list<Target> target_list(targets.begin(), targets.end());
-                latest_autoaim_cmd = aimer.aim(target_list, frame_time, bullet_speed);
-                latest_aim_point = aimer.debug_aim_point;
-                stats.aim_ms = std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - aim_begin).count();
-            }
+            const auto result = auto_aim.processFrame(display_frame, frame_time);
+            stats.detect_ms = result.detect_time_ms;
+            stats.track_ms = result.track_time_ms;
+            stats.aim_ms = result.aim_time_ms;
 
             auto draw_begin = std::chrono::steady_clock::now();
             if (draw_mode != DrawMode::Off)
             {
-                drawArmorDetection(display_frame, detected_armors);
+                drawArmorDetection(display_frame, result.armors);
                 if (draw_mode == DrawMode::Full)
                 {
-                    drawTargetInfo(display_frame, targets, tracker.state(), pnp_solver);
-                    if (latest_aim_point.valid)
+                    const auto &pnp_solver = auto_aim.getPnpSolver();
+                    drawTargetInfo(display_frame, result.targets, result.tracker_state_name(), pnp_solver);
+                    if (result.aim_point.valid)
                     {
-                        drawTrajectory(display_frame, latest_aim_point, bullet_speed, config_path, camera_matrix, distort_coeffs, pnp_solver.R_gimbal2world_);
+                        drawTrajectory(display_frame, result.aim_point, bullet_speed, config_path, camera_matrix, distort_coeffs, pnp_solver.gimbal2world());
                     }
                 }
             }
@@ -253,10 +228,10 @@ int main(int argc, char *argv[])
             {
                 draw_stage_stats(display_frame, stats, draw_mode, packet->frame_index);
 
-                if (latest_autoaim_cmd)
+                if (result.cmd.valid)
                 {
                     std::ostringstream ss;
-                    ss << std::fixed << std::setprecision(2) << "Yaw " << latest_autoaim_cmd->yaw * 180.0 / CV_PI << " deg  Pitch " << latest_autoaim_cmd->pitch * 180.0 / CV_PI << " deg";
+                    ss << std::fixed << std::setprecision(2) << "Yaw " << result.cmd.yaw * 180.0 / CV_PI << " deg  Pitch " << result.cmd.pitch * 180.0 / CV_PI << " deg";
                     cv::putText(display_frame, ss.str(), cv::Point(10, display_frame.rows - 20), cv::FONT_HERSHEY_SIMPLEX, 0.5, cv::Scalar(0, 255, 0), 1);
                 }
                 else

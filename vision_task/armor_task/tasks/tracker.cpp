@@ -10,7 +10,14 @@
 
 namespace armor_task
 {
-Tracker::Tracker(const std::string &config_path, PnpSolver &solver) : solver_{solver}, detect_count_(0), temp_lost_count_(0), state_{"lost"}, pre_state_{"lost"}, last_timestamp_(std::chrono::steady_clock::now()), last_self_is_red_(true)
+Tracker::Tracker(const std::string &config_path, PnpSolver &solver)
+    : solver_{solver},
+      detect_count_(0),
+      temp_lost_count_(0),
+      state_(TrackerState::LOST),
+      pre_state_(TrackerState::LOST),
+      last_timestamp_(std::chrono::steady_clock::now()),
+      last_self_is_red_(true)
 {
     auto yaml = YAML::LoadFile(config_path);
     enemy_color_ = (yaml["enemy_color"].as<std::string>() == "red") ? Color::red : Color::blue;
@@ -20,9 +27,58 @@ Tracker::Tracker(const std::string &config_path, PnpSolver &solver) : solver_{so
     // 初始化 temp_lost 阈值（使用配置文件中的值）
     normal_temp_lost_count_ = max_temp_lost_count_;
 
+    ekf_p0_diag_.resize(11);
+    ekf_p0_diag_ << 10, 64, 10, 64, 10, 64, 0.4, 100, 0.1, 0.1, 0.1;
+    if (yaml["ekf"])
+    {
+        const auto ekf = yaml["ekf"];
+        if (ekf["process_noise_v1"]) ekf_process_noise_v1_ = ekf["process_noise_v1"].as<double>();
+        if (ekf["process_noise_v1y"]) ekf_process_noise_v1y_ = ekf["process_noise_v1y"].as<double>();
+        if (ekf["process_noise_v2"]) ekf_process_noise_v2_ = ekf["process_noise_v2"].as<double>();
+        if (ekf["p0_diag"] && ekf["p0_diag"].IsSequence() && ekf["p0_diag"].size() == 11)
+        {
+            for (size_t i = 0; i < 11; ++i)
+            {
+                ekf_p0_diag_[static_cast<int>(i)] = ekf["p0_diag"][i].as<double>();
+            }
+        }
+    }
+
 }
 
-std::string Tracker::state() const { return state_; }
+Tracker::Tracker(const YAML::Node &yaml, PnpSolver &solver)
+    : solver_{solver},
+      detect_count_(0),
+      temp_lost_count_(0),
+      state_(TrackerState::LOST),
+      pre_state_(TrackerState::LOST),
+      last_timestamp_(std::chrono::steady_clock::now()),
+      last_self_is_red_(true)
+{
+    enemy_color_ = (yaml["enemy_color"].as<std::string>() == "red") ? Color::red : Color::blue;
+    min_detect_count_ = yaml["min_detect_count"].as<int>();
+    max_temp_lost_count_ = yaml["max_temp_lost_count"].as<int>();
+    normal_temp_lost_count_ = max_temp_lost_count_;
+
+    ekf_p0_diag_.resize(11);
+    ekf_p0_diag_ << 10, 64, 10, 64, 10, 64, 0.4, 100, 0.1, 0.1, 0.1;
+    if (yaml["ekf"])
+    {
+        const auto ekf = yaml["ekf"];
+        if (ekf["process_noise_v1"]) ekf_process_noise_v1_ = ekf["process_noise_v1"].as<double>();
+        if (ekf["process_noise_v1y"]) ekf_process_noise_v1y_ = ekf["process_noise_v1y"].as<double>();
+        if (ekf["process_noise_v2"]) ekf_process_noise_v2_ = ekf["process_noise_v2"].as<double>();
+        if (ekf["p0_diag"] && ekf["p0_diag"].IsSequence() && ekf["p0_diag"].size() == 11)
+        {
+            for (size_t i = 0; i < 11; ++i)
+            {
+                ekf_p0_diag_[static_cast<int>(i)] = ekf["p0_diag"][i].as<double>();
+            }
+        }
+    }
+}
+
+std::string Tracker::state() const { return trackerStateName(state_); }
 
 bool Tracker::get_enemy_color(bool iam_red)
 {
@@ -30,14 +86,12 @@ bool Tracker::get_enemy_color(bool iam_red)
     {
         init_ = true;
         enemy_color_ = iam_red ? Color::blue : Color::red;
-        std::cout << "enemy_color:" << enemy_color_ << std::endl;
         last_self_is_red_ = iam_red;
         return true;
     }
     if (iam_red != last_self_is_red_ )
     {
         enemy_color_ = iam_red ? Color::blue : Color::red;
-        std::cout << "enemy_color:" << enemy_color_ << std::endl;
         last_self_is_red_ = iam_red;
         return true;
     }
@@ -49,34 +103,11 @@ std::vector<Target> Tracker::track(std::vector<Armor> &armors, std::chrono::stea
     auto dt = tools::delta_time(t, last_timestamp_);
     last_timestamp_ = t;
 
-    // if (state_ != "lost" && dt > 0.1) {
-    //   std::cout<<"[Tracker] Large dt: {:.3f}s"<< dt<<std::endl;
-    //   state_ = "lost";
-    // }
-
     // 过滤掉非我方装甲板
-    // for (const auto &armor : armors)
-    // {
-    //     std::cout << "Armor1 "  << " color: " << armor.color << " center: (" << armor.center.x << ", " << armor.center.y << ")" << std::endl;
-    // }
     auto it = std::remove_if(armors.begin(), armors.end(), [&](const Armor &a) { return a.color != enemy_color_; });
     armors.erase(it, armors.end());
 
-    // for (const auto &armor : armors)
-    // {
-    //     std::cout << "Armor2 "  << " color: " << armor.color << " center: (" << armor.center.x << ", " << armor.center.y << ")" << std::endl;
-    // }
-
-    //std::cout<<"total num of amrmors"<<armors.size()<<std::endl;
-    // 过滤前哨站顶部装甲板
-    // armors.remove_if([this](const auto_aim::Armor & a) {
-    //   return a.name == ArmorName::outpost &&
-    //          solver_.oupost_reprojection_error(a, 27.5 * CV_PI / 180.0) <
-    //            solver_.oupost_reprojection_error(a, -15 * CV_PI / 180.0);
-    // });
-
-    // if (armors.size() > 3) {
-    //  优先选择靠近图像中心的装甲板
+    // 优先选择靠近图像中心的装甲板
     const cv::Point2f img_center(1440.0f / 2.0f, 1080.0f / 2.0f);
     std::sort(armors.begin(),
               armors.end(),
@@ -87,18 +118,8 @@ std::vector<Target> Tracker::track(std::vector<Armor> &armors, std::chrono::stea
                   return d1 < d2;
               });
 
-    // 保留排序后的前三个
-    // auto it = armors.begin();
-    // std::advance(it, 3);
-    // armors.erase(it, armors.end());
-    //}
-
-    // 按优先级排序，优先级最高在首位(优先级越高数字越小，1的优先级最高)
-    //   armors.sort(
-    //     [](const auto_aim::Armor & a, const auto_aim::Armor & b) { return a.priority < b.priority; });
-
     bool found;
-    if (state_ == "lost")
+    if (state_ == TrackerState::LOST)
     {
         found = set_target(armors, t);
     }
@@ -110,42 +131,7 @@ std::vector<Target> Tracker::track(std::vector<Armor> &armors, std::chrono::stea
     pre_state_ = state_;
     state_machine(found);
 
-    // if (state_ != pre_state_)
-    // {
-    //     std::cout << "[Tracker Internal] State change: " << pre_state_ << " -> " << state_ << std::endl;
-
-    //     // 特别标记switching状态的出现和结束
-    //     if (state_ == "switching")
-    //     {
-    //         std::cout << "[Tracker Internal] !!! SWITCHING state ENTERED !!!" << std::endl;
-    //     }
-    //     if (pre_state_ == "switching")
-    //     {
-    //         std::cout << "[Tracker Internal] !!! SWITCHING state EXITED !!!" << std::endl;
-    //     }
-    // }
-
-    // std::cout << "PRESTATE:" << pre_state_ << std::endl;
-    // std::cout << "STATE:" << state_ << std::endl;
-
-    // // 发散检测
-    // if (state_ != "lost" && target_.diverged()) {
-    //   //tools::logger()->debug("[Tracker] Target diverged!");
-    //   state_ = "lost";
-    //   return {};
-    // }
-
-    // //收敛效果检测：
-    // if (
-    //   std::accumulate(
-    //     target_.ekf().nis_failures.begin(), target_.ekf().nis_failures.end(), 0) >=
-    //   (0.4 * target_.ekf().window_size)) {
-    //   std::cout << "[Target] Bad Converge Found!" << std::endl;
-    //   state_ = "lost";
-    //   return {};
-    // }
-
-    if (state_ == "lost") return {};
+    if (state_ == TrackerState::LOST) return {};
 
     std::vector<Target> targets = {target_};
     return targets;
@@ -153,55 +139,55 @@ std::vector<Target> Tracker::track(std::vector<Armor> &armors, std::chrono::stea
 
 void Tracker::state_machine(bool found)
 {
-    if (state_ == "lost")
+    if (state_ == TrackerState::LOST)
     {
         if (!found) return;
 
-        state_ = "detecting";
+        state_ = TrackerState::DETECTING;
         detect_count_ = 1;
     }
 
-    else if (state_ == "detecting")
+    else if (state_ == TrackerState::DETECTING)
     {
         if (found)
         {
             detect_count_++;
-            if (detect_count_ >= min_detect_count_) state_ = "tracking";
+            if (detect_count_ >= min_detect_count_) state_ = TrackerState::TRACKING;
         }
         else
         {
             detect_count_ = 0;
-            state_ = "lost";
+            state_ = TrackerState::LOST;
         }
     }
 
-    else if (state_ == "tracking")
+    else if (state_ == TrackerState::TRACKING)
     {
         if (found) return;
 
         temp_lost_count_ = 1;
-        state_ = "temp_lost";
+        state_ = TrackerState::TEMP_LOST;
     }
 
-    else if (state_ == "switching")
+    else if (state_ == TrackerState::SWITCHING)
     {
         if (found)
         {
-            state_ = "detecting";
+            state_ = TrackerState::DETECTING;
         }
         else
         {
             temp_lost_count_++;
-            if (temp_lost_count_ > 200) state_ = "lost";
+            if (temp_lost_count_ > 200) state_ = TrackerState::LOST;
         }
     }
 
-    else if (state_ == "temp_lost")
+    else if (state_ == TrackerState::TEMP_LOST)
     {
         if (found)
         {
             // std::cout << "[Tracker] Recovering from temp_lost to tracking" << std::endl;
-            state_ = "tracking";
+            state_ = TrackerState::TRACKING;
             temp_lost_count_ = 0; // 重置计数器
         }
         else
@@ -222,7 +208,7 @@ void Tracker::state_machine(bool found)
             if (temp_lost_count_ > max_temp_lost_count_)
             {
                 // std::cout << "[Tracker] temp_lost timeout, switching to lost state" << std::endl;
-                state_ = "lost";
+                state_ = TrackerState::LOST;
             }
         }
     }
@@ -233,7 +219,7 @@ bool Tracker::set_target(std::vector<Armor> &armors, std::chrono::steady_clock::
     if (armors.empty()) return false;
 
     // for (auto & armor : armors) {
-    //   solver_._solve_pnp(armor);
+    //   solver_.solvePnP(armor);
     //   armor.grade = armor.p_camera.norm();
     // }
 
@@ -242,7 +228,7 @@ bool Tracker::set_target(std::vector<Armor> &armors, std::chrono::steady_clock::
     // });
 
     auto &armor = armors.front();
-    solver_._solve_pnp(armor);
+    solver_.solvePnP(armor);
 
     //   // 根据兵种优化初始化参数
     //   auto is_balance = (armor.type == ArmorType::big) &&
@@ -265,11 +251,7 @@ bool Tracker::set_target(std::vector<Armor> &armors, std::chrono::steady_clock::
     //   }
 
     //   else {
-    Eigen::VectorXd P0_dig(11);
-
-    // 自瞄调试参数
-    P0_dig << 10, 64, 10, 64, 10, 64, 0.4, 100, 0.1, 0.1, 0.1;
-    target_ = Target(armor, t, 4, P0_dig);
+    target_ = Target(armor, t, 4, ekf_p0_diag_, ekf_process_noise_v1_, ekf_process_noise_v1y_, ekf_process_noise_v2_);
     //   }
 
     return true;
@@ -283,11 +265,14 @@ bool Tracker::update_target(std::vector<Armor> &armors, std::chrono::steady_cloc
     Armor *best_armor = nullptr;
     double best_score = std::numeric_limits<double>::max();
 
+    // 性能优化（P-06）：只对前几个候选做 PnP
+    int checked = 0;
     for (auto &armor : armors)
     {
         if (armor.car_num != target_.car_num) continue;
+        if (++checked > 3) break;
 
-        if (!solver_._solve_pnp(armor)) continue;
+        if (!solver_.solvePnP(armor)) continue;
 
         double min_position_error = std::numeric_limits<double>::max();
         double min_angle_error = std::numeric_limits<double>::max();
@@ -319,45 +304,3 @@ bool Tracker::update_target(std::vector<Armor> &armors, std::chrono::steady_cloc
     return true;
 }
 }
-// bool Tracker::update_target(std::vector<Armor> &armors, std::chrono::steady_clock::time_point t)
-// {
-//     // 1. 预测必须做
-//     target_.predict(t);
-
-//     if (armors.empty()) return false;
-
-//     // 2. 寻找最佳匹配装甲板
-//     Armor* best_armor = nullptr;
-//     float min_dist_sq = 1e10; // 使用距离平方
-//     const cv::Point2f img_center(1440.0f / 2, 1080.0f / 2);
-
-//     for (auto &armor : armors)
-//     {
-//         // 严格匹配 ID
-//         if (armor.car_num != target_.car_num) continue;
-
-//         // 简单的距离筛选（如果已经是排序过的，第一个匹配的就是最好的，可以直接 break）
-//         // 这里假设 armors 已经在 track 函数里 sort 过了
-//         best_armor = &armor;
-//         break; 
-        
-//         // 如果上面没有 sort，则需要在这里遍历找最近的：
-//         /*
-//         float d = distance_sq(armor.center, img_center);
-//         if (d < min_dist_sq) {
-//             min_dist_sq = d;
-//             best_armor = &armor;
-//         }
-//         */
-//     }
-
-//     if (!best_armor) return false;
-
-//     // 3. 关键优化：只对【唯一】的最佳装甲板做 PnP 和 Update
-//     // 避免了对所有装甲板做 PnP 的巨大开销
-//     solver_._solve_pnp(*best_armor);
-//     target_.update(*best_armor);
-
-//     return true;
-// }
-// } // namespace armor_task

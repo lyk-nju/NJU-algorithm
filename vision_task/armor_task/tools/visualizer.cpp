@@ -289,7 +289,7 @@ void Visualizer3D::publishCameraPosition(const PnpSolver &pnp_solver, const Eige
     // 云台在世界坐标系中的位置：gimbal_position_world（通常为原点）
     // 相机在世界坐标系中的位置 = R_gimbal2world * t_camera2gimbal + gimbal_position_world
     Eigen::Vector3d camera_position_gimbal = pnp_solver.t_camera2gimbal_;
-    Eigen::Vector3d camera_position_world = pnp_solver.R_gimbal2world_ * camera_position_gimbal + gimbal_position_world;
+    Eigen::Vector3d camera_position_world = pnp_solver.gimbal2world() * camera_position_gimbal + gimbal_position_world;
 
     // 发布相机位置（紫色球体，较大）
     auto camera_sphere = createSphereMarker(id++, camera_position_world, {1.0, 0.0, 1.0}, 0.15);
@@ -304,17 +304,17 @@ void Visualizer3D::publishCameraPosition(const PnpSolver &pnp_solver, const Eige
 
     // 发布相机坐标系箭头（从相机位置出发）
     // X轴（红色）- 相机右方向
-    Eigen::Vector3d camera_x_world = pnp_solver.R_gimbal2world_ * pnp_solver.R_camera2gimbal_.transpose() * Eigen::Vector3d(1, 0, 0);
+    Eigen::Vector3d camera_x_world = pnp_solver.gimbal2world() * pnp_solver.R_camera2gimbal_.transpose() * Eigen::Vector3d(1, 0, 0);
     auto x_arrow = createArrowMarker(id++, camera_position_world, camera_x_world, {1.0, 0.0, 0.0}, 0.2);
     marker_array.markers.push_back(x_arrow);
 
     // Y轴（绿色）- 相机下方向
-    Eigen::Vector3d camera_y_world = pnp_solver.R_gimbal2world_ * pnp_solver.R_camera2gimbal_.transpose() * Eigen::Vector3d(0, 1, 0);
+    Eigen::Vector3d camera_y_world = pnp_solver.gimbal2world() * pnp_solver.R_camera2gimbal_.transpose() * Eigen::Vector3d(0, 1, 0);
     auto y_arrow = createArrowMarker(id++, camera_position_world, camera_y_world, {0.0, 1.0, 0.0}, 0.2);
     marker_array.markers.push_back(y_arrow);
 
     // Z轴（蓝色）- 相机前方向
-    Eigen::Vector3d camera_z_world = pnp_solver.R_gimbal2world_ * pnp_solver.R_camera2gimbal_.transpose() * Eigen::Vector3d(0, 0, 1);
+    Eigen::Vector3d camera_z_world = pnp_solver.gimbal2world() * pnp_solver.R_camera2gimbal_.transpose() * Eigen::Vector3d(0, 0, 1);
     auto z_arrow = createArrowMarker(id++, camera_position_world, camera_z_world, {0.0, 0.0, 1.0}, 0.2);
     marker_array.markers.push_back(z_arrow);
 

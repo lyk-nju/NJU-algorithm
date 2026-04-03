@@ -10,7 +10,7 @@ communication.cpp:
 
 #include "../../io/keyboard_manager.hpp"
 #include "../../io/serial_manager.hpp"
-#include "../../tools/pharser.hpp"
+#include "../../tools/parser.hpp"
 #include "../../tools/transfer.hpp"
 #include <atomic>
 #include <chrono>
@@ -20,6 +20,12 @@ communication.cpp:
 #include <sys/stat.h>
 #include <thread>
 #include <yaml-cpp/yaml.h>
+
+namespace
+{
+constexpr double kPi = 3.14159265358979323846;
+constexpr double kRad2Deg = 180.0 / kPi;
+} // namespace
 
 int main(int argc, char *argv[])
 {
@@ -128,8 +134,8 @@ int main(int argc, char *argv[])
                 {
                     if (success)
                     {
-                        std::cout << "  Command sent (string): yaw=" << std::fixed << std::setprecision(3) << cmd.yaw << " rad (" << (cmd.yaw * 180.0 / 3.14159265) << " deg), pitch=" << cmd.pitch << " rad ("
-                                  << (cmd.pitch * 180.0 / 3.14159265) << " deg)" << std::endl;
+                        std::cout << "  Command sent (string): yaw=" << std::fixed << std::setprecision(3) << cmd.yaw << " rad (" << (cmd.yaw * kRad2Deg) << " deg), pitch=" << cmd.pitch << " rad ("
+                                  << (cmd.pitch * kRad2Deg) << " deg)" << std::endl;
                     }
                     else
                     {
@@ -166,12 +172,12 @@ int main(int argc, char *argv[])
                           << "x=" << quat.x() << ", "
                           << "y=" << quat.y() << ", "
                           << "z=" << quat.z() << ") | "
-                          << "yaw=" << yaw_rad << " rad (" << (yaw_rad * 180.0 / 3.14159265) << " deg), "
-                          << "pitch=" << pitch_rad << " rad (" << (pitch_rad * 180.0 / 3.14159265) << " deg), "
+                          << "yaw=" << yaw_rad << " rad (" << (yaw_rad * kRad2Deg) << " deg), "
+                          << "pitch=" << pitch_rad << " rad (" << (pitch_rad * kRad2Deg) << " deg), "
                           << "game_time=" << judger_data.game_time << ", self_hp=" << judger_data.self_hp << std::endl;
 
                 Eigen::Vector3d euler = quat.toRotationMatrix().eulerAngles(2, 1, 0);
-                std::cout << "  [" << ss.str() << "] Calculated Euler (deg) ZYX: yaw=" << (euler[0] * 180.0 / 3.14159265) << " pitch=" << (euler[1] * 180.0 / 3.14159265) << " roll=" << (euler[2] * 180.0 / 3.14159265)
+                std::cout << "  [" << ss.str() << "] Calculated Euler (deg) ZYX: yaw=" << (euler[0] * kRad2Deg) << " pitch=" << (euler[1] * kRad2Deg) << " roll=" << (euler[2] * kRad2Deg)
                           << std::endl;
                 std::cout << "  [" << ss.str() << "] 裁判信息: 比赛时间=" << judger_data.game_time << ", 剩余血量=" << judger_data.self_hp << std::endl;
             }

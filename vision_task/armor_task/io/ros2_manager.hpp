@@ -1,7 +1,7 @@
 #pragma once
 
 #include "armor.hpp"
-#include <cv_bridge/cv_bridge.h> // 使用 .h 而不是 .hpp，ROS2 Humble 的 cv_bridge 是 C++ 库但使用 .h 扩展名
+#include <cv_bridge/cv_bridge/cv_bridge.hpp>
 #include <geometry_msgs/msg/twist.hpp>
 #include <memory>
 #include <mutex>

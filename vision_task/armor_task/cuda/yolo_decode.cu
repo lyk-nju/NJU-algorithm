@@ -11,6 +11,14 @@ constexpr int kClassCount = 36;
 constexpr int kNumAnchors = 8400;
 constexpr int kMaxBoxes = 1024;
 
+DecodedBBox* d_boxes = nullptr;
+DecodedBBox* d_kept_boxes = nullptr;
+int* d_count = nullptr;
+int* d_kept_count = nullptr;
+uint8_t* d_keep_flags = nullptr;
+DecodedBBox* h_boxes = nullptr;
+bool is_init = false;
+
 __device__ float box_iou(const DecodedBBox& a, const DecodedBBox& b) {
     const float a_left = a.x - 0.5f * a.w;
     const float a_top = a.y - 0.5f * a.h;
@@ -137,13 +145,9 @@ void launch_decode_kernel(
     float nms_thresh,
     cudaStream_t stream
 ) {
-    static DecodedBBox* d_boxes = nullptr;
-    static DecodedBBox* d_kept_boxes = nullptr;
-    static int* d_count = nullptr;
-    static int* d_kept_count = nullptr;
-    static uint8_t* d_keep_flags = nullptr;
-    static DecodedBBox* h_boxes = nullptr;
-    static bool is_init = false;
+    // last_count：用上一帧的实际框数作为本帧 NMS/compact 的上界，
+    // 避免在 decode_kernel 之后插入中间同步来读取 count。
+    static int last_count = kMaxBoxes;
 
     if (!is_init) {
         cudaMalloc(&d_boxes, kMaxBoxes * sizeof(DecodedBBox));
@@ -157,6 +161,8 @@ void launch_decode_kernel(
 
     cudaMemsetAsync(d_count, 0, sizeof(int), stream);
     cudaMemsetAsync(d_kept_count, 0, sizeof(int), stream);
+    // 清零 keep_flags，防止 last_count > cur_count 时旧帧残留 box 通过 NMS
+    cudaMemsetAsync(d_keep_flags, 0, last_count * sizeof(uint8_t), stream);
 
     int threads = 256;
     int blocks = (kNumAnchors + threads - 1) / threads;
@@ -164,28 +170,48 @@ void launch_decode_kernel(
         device_output, d_boxes, d_count, kNumAnchors, conf_thresh, kMaxBoxes
     );
 
-    int count = 0;
-    cudaMemcpyAsync(&count, d_count, sizeof(int), cudaMemcpyDeviceToHost, stream);
-    cudaStreamSynchronize(stream);
-
-    count = std::min(count, kMaxBoxes);
-    output_boxes.clear();
-    if (count <= 0) return;
-
-    const int nms_blocks = (count + threads - 1) / threads;
-    nms_kernel<<<nms_blocks, threads, 0, stream>>>(d_boxes, count, nms_thresh, d_keep_flags);
+    // 用上一帧 count 启动 NMS，无需中间 sync
+    const int nms_blocks = (last_count + threads - 1) / threads;
+    nms_kernel<<<nms_blocks, threads, 0, stream>>>(d_boxes, last_count, nms_thresh, d_keep_flags);
     compact_kernel<<<nms_blocks, threads, 0, stream>>>(
-        d_boxes, d_keep_flags, count, d_kept_boxes, d_kept_count, kMaxBoxes);
+        d_boxes, d_keep_flags, last_count, d_kept_boxes, d_kept_count, kMaxBoxes);
 
     int kept_count = 0;
+    int cur_count = 0;
     cudaMemcpyAsync(&kept_count, d_kept_count, sizeof(int), cudaMemcpyDeviceToHost, stream);
+    cudaMemcpyAsync(&cur_count, d_count, sizeof(int), cudaMemcpyDeviceToHost, stream);
     cudaMemcpyAsync(h_boxes, d_kept_boxes, kMaxBoxes * sizeof(DecodedBBox), cudaMemcpyDeviceToHost, stream);
     cudaStreamSynchronize(stream);
 
+    // 更新 last_count 供下一帧使用
+    last_count = std::min(cur_count, kMaxBoxes);
+    if (last_count == 0) last_count = kMaxBoxes; // 避免空帧导致下帧跳过所有框
+
+    output_boxes.clear();
     kept_count = std::min(kept_count, kMaxBoxes);
     if (kept_count <= 0) return;
 
     output_boxes.assign(h_boxes, h_boxes + kept_count);
+}
+
+void release_decode_kernel_resources()
+{
+    if (!is_init) return;
+
+    if (d_boxes) cudaFree(d_boxes);
+    if (d_kept_boxes) cudaFree(d_kept_boxes);
+    if (d_count) cudaFree(d_count);
+    if (d_kept_count) cudaFree(d_kept_count);
+    if (d_keep_flags) cudaFree(d_keep_flags);
+    if (h_boxes) cudaFreeHost(h_boxes);
+
+    d_boxes = nullptr;
+    d_kept_boxes = nullptr;
+    d_count = nullptr;
+    d_kept_count = nullptr;
+    d_keep_flags = nullptr;
+    h_boxes = nullptr;
+    is_init = false;
 }
 
 } // namespace armor_task

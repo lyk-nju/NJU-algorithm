@@ -11,22 +11,32 @@
 namespace armor_task
 {
 
+static constexpr double kDeg2Rad = M_PI / 180.0;
+
 Aimer::Aimer(const std::string &config_path)
 {
-    auto yaml = YAML::LoadFile(config_path);
-    yaw_offset_ = yaml["yaw_offset"].as<double>() / 57.3;       // degree to rad
-    pitch_offset_ = yaml["pitch_offset"].as<double>() / 57.3;   // degree to rad
-    comming_angle_ = yaml["comming_angle"].as<double>() / 57.3; // degree to rad
-    leaving_angle_ = yaml["leaving_angle"].as<double>() / 57.3; // degree to rad
+    initFromConfig(YAML::LoadFile(config_path));
+}
+
+Aimer::Aimer(const YAML::Node &config)
+{
+    initFromConfig(config);
+}
+
+void Aimer::initFromConfig(const YAML::Node &yaml)
+{
+    yaw_offset_ = yaml["yaw_offset"].as<double>() * kDeg2Rad;
+    pitch_offset_ = yaml["pitch_offset"].as<double>() * kDeg2Rad;
+    comming_angle_ = yaml["comming_angle"].as<double>() * kDeg2Rad;
+    leaving_angle_ = yaml["leaving_angle"].as<double>() * kDeg2Rad;
     high_speed_delay_time_ = yaml["high_speed_delay_time"].as<double>();
     low_speed_delay_time_ = yaml["low_speed_delay_time"].as<double>();
     decision_speed_ = yaml["decision_speed_"].as<double>();
 }
 
-io::Command Aimer::aim(std::list<Target> targets, std::chrono::steady_clock::time_point timestamp, double bullet_speed, bool to_now)
+io::Command Aimer::aim(const Target &target_in, std::chrono::steady_clock::time_point timestamp, double bullet_speed, bool to_now)
 {
-    if (targets.empty()) return {false, false, 0, 0};
-    auto target = targets.front();
+    auto target = target_in;
 
     // 通过角速度大小决定开火策略
     auto ekf = target.ekf();
@@ -69,23 +79,18 @@ io::Command Aimer::aim(std::list<Target> targets, std::chrono::steady_clock::tim
     // 迭代求解飞行时间 (最多10次，收敛条件：相邻两次fly_time差 <0.001)
     double prev_fly_time = trajectory0.fly_time;
     Trajectory current_traj = trajectory0;
-    std::vector<Target> iteration_target(10, target); // 创建10个目标副本用于迭代预测
-
-    // 调试输出
-    double future_s = std::chrono::duration<double>(future.time_since_epoch()).count();
-    // std::cout << "future: " << future_s << " s" << std::endl;
+    Target iter_target = target; // 单个副本，每次迭代重置
 
     for (int iter = 0; iter < 10; ++iter)
     {
         // 预测目标在 future + prev_fly_time 时刻的位置
         auto predict_time = future + std::chrono::microseconds(static_cast<int>(prev_fly_time * 1e6));
-        double predict_time_s = std::chrono::duration<double>(predict_time.time_since_epoch()).count();
-        // std::cout << "predict_time: " << predict_time_s << " s" << std::endl; // 输出预测时间
 
-        iteration_target[iter].predict(predict_time);
+        iter_target = target; // 重置为初始状态
+        iter_target.predict(predict_time);
 
         // 计算瞄准点
-        auto aim_point = choose_aim_point(iteration_target[iter]);
+        auto aim_point = choose_aim_point(iter_target);
         debug_aim_point = aim_point;
         if (!aim_point.valid)
         {

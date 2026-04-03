@@ -8,18 +8,24 @@
 
 // 相机x对应世界-y,相机y对应世界-z,相机z对于世界x
 
+namespace YAML
+{
+class Node;
+}
+
 class PnpSolver
 {
   public:
     // 构造函数（通过yaml配置文件初始化）
     PnpSolver(const std::string &config_path);
+    PnpSolver(const YAML::Node &config);
 
     // only debug use
     PnpSolver(const cv::Mat &camera_matrix, const cv::Mat &distortion_coeffs);
     ~PnpSolver() = default;
 
     // PnP位姿解算函数，直接修改Armor对象中的yaw和p_camera
-    bool _solve_pnp(Armor &armor);
+    bool solvePnP(Armor &armor);
 
     // 判断是否是大装甲板
     bool Islarge(Armor &armor);
@@ -37,7 +43,7 @@ class PnpSolver
     Eigen::Matrix3d R_gimbal2imubody_;
     Eigen::Matrix3d R_camera2gimbal_;
     Eigen::Vector3d t_camera2gimbal_;
-    Eigen::Matrix3d R_gimbal2world_;
+    const Eigen::Matrix3d &gimbal2world() const { return R_gimbal2world_; }
 
     void optimize_yaw(Armor &armor) const;
 
@@ -59,6 +65,7 @@ class PnpSolver
     cv::Mat camera_matrix_;                 // 相机内参矩阵
     cv::Mat distort_coeffs_;                // 畸变系数
     std::vector<cv::Point3f> armor_points_; // 装甲板3D模型点
+    Eigen::Matrix3d R_gimbal2world_;
 
     static constexpr float SMALL_ARMOR_WIDTH = 0.135;  // m
     static constexpr float SMALL_ARMOR_HEIGHT = 0.056; // m
@@ -67,4 +74,6 @@ class PnpSolver
 
     // 初始化装甲板3D模型点
     void initArmorPoints(bool is_large_armor);
+
+    void initFromConfig(const YAML::Node &config);
 };

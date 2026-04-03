@@ -19,4 +19,7 @@ void launch_decode_kernel(
     cudaStream_t stream
 );
 
+// 释放 launch_decode_kernel 内部静态 CUDA 资源（P-09）
+void release_decode_kernel_resources();
+
 } // namespace armor_task

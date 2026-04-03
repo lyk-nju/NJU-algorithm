@@ -6,13 +6,12 @@
 #include <functional>
 #include <map>
 
+namespace armor_task
+{
 
 class Ekf
 {
 public:
-  Eigen::VectorXd x;
-  Eigen::MatrixXd P;
-
   Ekf() = default;
 
   Ekf(
@@ -42,7 +41,12 @@ public:
   size_t window_size = 100;
   double last_nis;
 
+  const Eigen::VectorXd &state() const { return x_; }
+  const Eigen::MatrixXd &covariance() const { return P_; }
+
 private:
+  Eigen::VectorXd x_;
+  Eigen::MatrixXd P_;
   Eigen::MatrixXd I;
   std::function<Eigen::VectorXd(const Eigen::VectorXd &, const Eigen::VectorXd &)> x_add;
 
@@ -51,5 +55,6 @@ private:
   int total_count_ = 0;
 };
 
+} // namespace armor_task
 
 #endif  // TOOLS__EXTENDED_KALMAN_FILTER_HPP

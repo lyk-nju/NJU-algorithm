@@ -1,6 +1,7 @@
 #pragma once
 
 #include "../io/serial_manager.hpp"
+#include "../tools/transfer.hpp"
 #include "aimer.hpp"
 #include "detector.hpp"
 #include "pnp_solver.hpp"
@@ -11,10 +12,10 @@
 #include <mutex>
 #include <opencv2/opencv.hpp>
 #include <string>
+#include <yaml-cpp/yaml.h>
 
 namespace armor_task
 {
-
 /// IMU 历史数据结构（用于图像-IMU 时间戳同步）
 struct IMUTimestamp
 {
@@ -49,7 +50,9 @@ struct ProcessResult
     double detect_time_ms;
     double track_time_ms;
     double aim_time_ms;
-    std::string tracker_state;
+    TrackerState tracker_state{TrackerState::LOST};
+
+    const char *tracker_state_name() const { return trackerStateName(tracker_state); }
 };
 
 /**
@@ -67,6 +70,9 @@ class AutoAimSystem
     /// 更新 IMU/云台姿态（由外部 IMU 数据源周期性调用）
     void updateImu(const Eigen::Quaterniond &quat, double yaw, double pitch);
 
+    /// 更新裁判系统数据（同步敌方颜色，应在 updateImu 同一线程中调用）
+    void updateJudgerData(const io::JudgerData &judger_data);
+
     /// 处理一帧图像，返回瞄准控制量与中间结果
     ProcessResult processFrame(const cv::Mat &img, std::chrono::steady_clock::time_point image_timestamp);
 
@@ -77,6 +83,7 @@ class AutoAimSystem
     const PnpSolver &getPnpSolver() const { return pnp_solver_; }
 
   private:
+    YAML::Node config_;
     Detector detector_;
     PnpSolver pnp_solver_;
     Tracker tracker_;

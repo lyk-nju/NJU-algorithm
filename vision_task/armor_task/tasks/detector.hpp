@@ -6,11 +6,14 @@
 #include <opencv2/opencv.hpp>
 #include <string>
 #include <vector>
+#if ARMOR_TASK_WITH_TENSORRT_CUDA
 #include <NvInfer.h>
 #include <cuda_runtime_api.h>
 #include "../cuda/yolo_decode.cuh"
+#endif
 
 namespace armor_task {
+#if ARMOR_TASK_WITH_TENSORRT_CUDA
 void launch_preprocess_kernel(
     const uint8_t* src, int src_w, int src_h, int src_step, // 输入：原始图像信息
     float* dst, int dst_w, int dst_h,                       // 输出：模型输入 buffer
@@ -25,6 +28,7 @@ public:
             std::cout << "[TRT] " << msg << std::endl;
     }
 };
+#endif
 
 class Detector
 {
@@ -86,6 +90,7 @@ class Detector
 
     // TensorRT
     bool is_trt_ = false;
+#if ARMOR_TASK_WITH_TENSORRT_CUDA
     Logger logger_;
     nvinfer1::IRuntime* runtime_ = nullptr;
     nvinfer1::ICudaEngine* engine_ = nullptr;
@@ -104,5 +109,6 @@ class Detector
 
     uint8_t* device_image_buffer_=nullptr;
     size_t device_image_buffer_size_=0;
+#endif
 };
 } // namespace armor_task

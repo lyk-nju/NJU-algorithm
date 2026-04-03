@@ -26,7 +26,7 @@ armor_task/
 ├── tools/                  # 工具函数库
 │   ├── draw.cpp/hpp        # 可视化绘制函数
 │   ├── math_tools.cpp/hpp  # 数学工具函数
-│   ├── pharser.cpp/hpp     # 配置文件解析
+│   ├── parser.cpp/hpp     # 配置文件解析
 │   └── rviz_visualizer.cpp/hpp    # RViz 可视化
 │
 ├── include/                # 数据结构定义

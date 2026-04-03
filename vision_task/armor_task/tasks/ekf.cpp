@@ -2,6 +2,9 @@
 #include <iostream>
 #include <numeric>
 
+namespace armor_task
+{
+
 // 状态向量：(xc,vxc,yc,vyc,zc,vyz,yaw,w,r,dl,dh)
 // a: angle
 // w: angular velocity
@@ -17,7 +20,7 @@
 此yaw,pitch非彼yaw,pitch。在观测向量建模时，我们取世界坐标系原点建立极坐标系，此处的yaw是目标在极坐标系下水平面的角度，pitch是目标在极坐标系下垂直面的角度，distance是目标与相机的距离,orieantaion_yaw是目标相对于原点的偏航角
 */
 Ekf::Ekf(const Eigen::VectorXd &x0, const Eigen::MatrixXd &P0, std::function<Eigen::VectorXd(const Eigen::VectorXd &, const Eigen::VectorXd &)> x_add) :
-    x(x0), P(P0), I(Eigen::MatrixXd::Identity(x0.rows(), x0.rows())), x_add(x_add)
+    x_(x0), P_(P0), I(Eigen::MatrixXd::Identity(x0.rows(), x0.rows())), x_add(x_add)
 {
     data["residual_yaw"] = 0.0;
     data["residual_pitch"] = 0.0;
@@ -37,9 +40,9 @@ Eigen::VectorXd Ekf::predict(const Eigen::MatrixXd &F, const Eigen::MatrixXd &Q)
 
 Eigen::VectorXd Ekf::predict(const Eigen::MatrixXd &F, const Eigen::MatrixXd &Q, std::function<Eigen::VectorXd(const Eigen::VectorXd &)> f)
 {
-    P = F * P * F.transpose() + Q;
-    x = f(x);
-    return x;
+    P_ = F * P_ * F.transpose() + Q;
+    x_ = f(x_);
+    return x_;
 }
 
 Eigen::VectorXd Ekf::update(const Eigen::VectorXd &z, const Eigen::MatrixXd &H, const Eigen::MatrixXd &R, std::function<Eigen::VectorXd(const Eigen::VectorXd &, const Eigen::VectorXd &)> z_subtract)
@@ -53,22 +56,22 @@ Eigen::VectorXd Ekf::update(const Eigen::VectorXd &z,
                             std::function<Eigen::VectorXd(const Eigen::VectorXd &)> h,
                             std::function<Eigen::VectorXd(const Eigen::VectorXd &, const Eigen::VectorXd &)> z_subtract)
 {
-    Eigen::VectorXd x_prior = x;
-    Eigen::MatrixXd K = P * H.transpose() * (H * P * H.transpose() + R).inverse();
+    Eigen::VectorXd x_prior = x_;
+    Eigen::MatrixXd K = P_ * H.transpose() * (H * P_ * H.transpose() + R).inverse();
 
     // Stable Compution of the Posterior Covariance
     // https://github.com/rlabbe/Kalman-and-Bayesian-Filters-in-Python/blob/master/07-Kalman-Filter-Math.ipynb
-    P = (I - K * H) * P * (I - K * H).transpose() + K * R * K.transpose();
+    P_ = (I - K * H) * P_ * (I - K * H).transpose() + K * R * K.transpose();
 
-    x = x_add(x, K * z_subtract(z, h(x)));
+    x_ = x_add(x_, K * z_subtract(z, h(x_)));
 
     /// 卡方检验
-    Eigen::VectorXd residual = z_subtract(z, h(x));
+    Eigen::VectorXd residual = z_subtract(z, h(x_));
 
     // 新增检验
-    Eigen::MatrixXd S = H * P * H.transpose() + R;
+    Eigen::MatrixXd S = H * P_ * H.transpose() + R;
     double nis = residual.transpose() * S.inverse() * residual;
-    double nees = (x - x_prior).transpose() * P.inverse() * (x - x_prior);
+    double nees = (x_ - x_prior).transpose() * P_.inverse() * (x_ - x_prior);
 
     // 卡方检验阈值（自由度=4，取置信水平95%）
     constexpr double nis_threshold = 0.711;
@@ -97,7 +100,7 @@ Eigen::VectorXd Ekf::update(const Eigen::VectorXd &z,
     data["nees"] = nees;
     data["recent_nis_failures"] = recent_rate;
 
-    return x;
+    return x_;
 }
 // #include <Eigen/Dense>
 // #include <functional>
@@ -185,6 +188,8 @@ Eigen::VectorXd Ekf::update(const Eigen::VectorXd &z,
     
 //     return x;
 // }
+
+} // namespace armor_task
 
 // StateVector Ekf::update(const MeasVector &z,
 //                         const MeasMatrix &H,

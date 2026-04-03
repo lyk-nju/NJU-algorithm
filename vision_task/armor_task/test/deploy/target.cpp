@@ -26,7 +26,7 @@ target.cpp：
 #include "../../tasks/pnp_solver.hpp"
 #include "../../tasks/tracker.hpp"
 #include "../../tools/draw.hpp"
-#include "../../tools/pharser.hpp"
+#include "../../tools/parser.hpp"
 #include <atomic>
 #include <chrono>
 #include <fstream>
@@ -173,7 +173,7 @@ int main(int argc, char *argv[])
                 if (imu_has_data)
                 {
                     pnp_solver.set_R_gimbal2world(imu_quat);
-                    Eigen::Vector3d euler = pnp_solver.R_gimbal2world_.eulerAngles(2, 1, 0);
+                    Eigen::Vector3d euler = pnp_solver.gimbal2world().eulerAngles(2, 1, 0);
                     std::cout << "[IMU] yaw=" << std::fixed << std::setprecision(4) << imu_yaw << " pitch=" << imu_pitch << std::endl;
                     std::cout << "[HOST] yaw=" << std::fixed << std::setprecision(4) << euler[0] << " pitch=" << euler[1] << std::endl;
                 }

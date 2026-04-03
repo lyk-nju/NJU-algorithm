@@ -1,7 +1,7 @@
 #include "draw.hpp"
 #include "../tasks/aimer.hpp"
 #include "../tasks/trajectory_normal.hpp"
-#include "pharser.hpp"
+#include "parser.hpp"
 #include <Eigen/Dense>
 #include <iomanip>
 #include <mutex>
@@ -665,7 +665,7 @@ void drawTargetInfo(cv::Mat &img, const std::vector<Target> &targets, const std:
         // std::cout << "[Draw] EKF center world: (" << ekf_world[0] << ", " << ekf_world[1] << ", " << ekf_world[2] << ")" << std::endl;
 
         // 使用 pnp_solver 的变换矩阵（与装甲板重投影保持一致）
-        Eigen::Vector3d ekf_camera = pnp_solver.R_camera2gimbal_.transpose() * (pnp_solver.R_gimbal2world_.transpose() * ekf_world - pnp_solver.t_camera2gimbal_);
+        Eigen::Vector3d ekf_camera = pnp_solver.R_camera2gimbal_.transpose() * (pnp_solver.gimbal2world().transpose() * ekf_world - pnp_solver.t_camera2gimbal_);
 
         // std::cout << "[Draw] EKF center camera: (" << ekf_camera[0] << ", " << ekf_camera[1] << ", " << ekf_camera[2] << ")" << std::endl;
 

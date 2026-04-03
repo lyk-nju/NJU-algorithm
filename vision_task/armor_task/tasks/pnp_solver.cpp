@@ -20,9 +20,16 @@ const std::vector<cv::Point3f> SMALL_ARMOR_POINTS{{0, SMALL_ARMOR_WIDTH / 2, LIG
 
 PnpSolver::PnpSolver(const std::string &config_path) : R_gimbal2world_(Eigen::Matrix3d::Identity())
 {
+    initFromConfig(YAML::LoadFile(config_path));
+}
 
-    auto yaml = YAML::LoadFile(config_path);
+PnpSolver::PnpSolver(const YAML::Node &config) : R_gimbal2world_(Eigen::Matrix3d::Identity())
+{
+    initFromConfig(config);
+}
 
+void PnpSolver::initFromConfig(const YAML::Node &yaml)
+{
     auto R_gimbal2imubody_data = yaml["R_gimbal2imubody"].as<std::vector<double>>();
     auto R_camera2gimbal_data = yaml["R_camera2gimbal"].as<std::vector<double>>();
     auto t_camera2gimbal_data = yaml["t_camera2gimbal"].as<std::vector<double>>();
@@ -84,25 +91,7 @@ void PnpSolver::set_R_gimbal2world(const Eigen::Quaterniond &q)
     R_gimbal2world_ = R_gimbal2imubody_.transpose() * R_imubody2imuabs * R_gimbal2imubody_;
 }
 
-// void PnpSolver::set_R_gimbal2world(const Eigen::Quaterniond &q)
-// {
-//     Eigen::Matrix3d R_imubody2imuabs = q.toRotationMatrix();
-//     // IMU installation swaps pitch/roll axes (X/Y), apply basis swap correction.
-//     Eigen::Matrix3d swap_xy;
-//     swap_xy << 0.0, 1.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0;
-//     Eigen::Matrix3d R_corrected = swap_xy * R_imubody2imuabs * swap_xy;
-//     // Yaw/Pitch are inverted w.r.t. IMU; flip signs in Euler space and rebuild.
-//     Eigen::Vector3d ypr = R_corrected.eulerAngles(2, 1, 0);
-//     ypr[0] = -ypr[0];
-//     ypr[1] = -ypr[1];
-//     Eigen::AngleAxisd yaw_aa(ypr[0], Eigen::Vector3d::UnitZ());
-//     Eigen::AngleAxisd pitch_aa(ypr[1], Eigen::Vector3d::UnitY());
-//     Eigen::AngleAxisd roll_aa(ypr[2], Eigen::Vector3d::UnitX());
-//     R_corrected = yaw_aa.toRotationMatrix() * pitch_aa.toRotationMatrix() * roll_aa.toRotationMatrix();
-//     R_gimbal2world_ = R_gimbal2imubody_.transpose() * R_corrected * R_gimbal2imubody_;
-// }
-
-bool PnpSolver::_solve_pnp(Armor &armor)
+bool PnpSolver::solvePnP(Armor &armor)
 {
     if (armor.left_lightbar.center == cv::Point2f(0, 0) || armor.right_lightbar.center == cv::Point2f(0, 0))
     {
@@ -166,7 +155,7 @@ int PnpSolver::solveArmorArray(ArmorArray &armor_array)
 
     for (size_t i = 0; i < armor_array.size(); ++i)
     {
-        if (_solve_pnp(armor_array[i]))
+        if (solvePnP(armor_array[i]))
         {
             success_count++;
         }

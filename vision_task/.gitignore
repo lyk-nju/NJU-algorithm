@@ -1,6 +1,7 @@
 *.elf
 .pio/
 .vscode/
+.md
 build/
 install/
 log/

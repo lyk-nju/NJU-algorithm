@@ -3,12 +3,16 @@
 
 #include <Eigen/Dense>
 #include <chrono>
-#include <list>
 
 #include "../io/serial_manager.hpp"
 #include "target.hpp"
 
 // aimer内部只管yaw角的计算，pitch角的计算交给trajectory模块
+
+namespace YAML
+{
+class Node;
+}
 
 namespace armor_task
 {
@@ -25,7 +29,8 @@ class Aimer
   public:
     AimPoint debug_aim_point;
     explicit Aimer(const std::string &config_path);
-    io::Command aim(std::list<Target> targets, std::chrono::steady_clock::time_point timestamp, double bullet_speed, bool to_now = true);
+    explicit Aimer(const YAML::Node &config);
+    io::Command aim(const Target &target, std::chrono::steady_clock::time_point timestamp, double bullet_speed, bool to_now = true);
 
   private:
     double yaw_offset_;
@@ -39,6 +44,8 @@ class Aimer
     double decision_speed_;
 
     AimPoint choose_aim_point(const Target &target);
+
+    void initFromConfig(const YAML::Node &config);
 };
 } // namespace armor_task
 

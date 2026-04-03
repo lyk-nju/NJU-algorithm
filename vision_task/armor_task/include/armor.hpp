@@ -1,7 +1,5 @@
-#ifndef ARMOR_HPP
-#define ARMOR_HPP
-
 #pragma once
+
 #include <Eigen/Dense>
 #include <opencv2/opencv.hpp>
 #include <string>
@@ -64,5 +62,3 @@ struct Armor
 };
 
 using ArmorArray = std::vector<Armor>;
-
-#endif

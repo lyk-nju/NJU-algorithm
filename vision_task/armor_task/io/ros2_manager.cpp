@@ -1,7 +1,4 @@
 #include "ros2_manager.hpp"
-#include "detector.hpp"
-#include "pnp_solver.hpp"
-#include "tracker.hpp"
 #include <filesystem>
 
 ROS2Manager::ROS2Manager() : Node("ros2_manager")
@@ -47,19 +44,24 @@ void ROS2Manager::image_callback(const sensor_msgs::msg::Image::SharedPtr msg)
             }
         }
 
-        // 转换ROS时间戳为steady_clock时间点
-        // ROS使用的是系统时间（system_clock），我们需要转换为steady_clock
-        auto ros_time = rclcpp::Time(msg->header.stamp);
-        auto now_system = std::chrono::system_clock::now();
-        auto now_steady = std::chrono::steady_clock::now();
+        // 将 ROS 时间戳映射到 steady_clock（用于与 IMUHistory 对齐）。
+        // 注意：ROS 时间可能是 system time / ROS time / sim time，无法保证可映射。
+        // 这里使用“当前 system_clock 与 msg stamp 的差值”估算，并对异常差值做降级。
+        const auto now_system = std::chrono::system_clock::now();
+        const auto now_steady = std::chrono::steady_clock::now();
+        const auto ros_time = rclcpp::Time(msg->header.stamp);
 
-        // 计算ROS时间与当前系统时间的差值
-        auto ros_time_sec = ros_time.seconds();
-        auto now_system_sec = std::chrono::duration_cast<std::chrono::duration<double>>(now_system.time_since_epoch()).count();
-        auto time_diff = std::chrono::duration<double>(ros_time_sec - now_system_sec);
+        const double ros_time_sec = ros_time.seconds();
+        const double now_system_sec =
+            std::chrono::duration_cast<std::chrono::duration<double>>(now_system.time_since_epoch()).count();
+        const double diff_sec = ros_time_sec - now_system_sec;
 
-        // 将时间差应用到steady_clock
-        auto frame_timestamp = now_steady + std::chrono::duration_cast<std::chrono::steady_clock::duration>(time_diff);
+        std::chrono::steady_clock::time_point frame_timestamp = now_steady;
+        if (std::abs(diff_sec) <= 1.0)
+        {
+            const auto diff = std::chrono::duration<double>(diff_sec);
+            frame_timestamp = now_steady + std::chrono::duration_cast<std::chrono::steady_clock::duration>(diff);
+        }
 
         auto packet = std::make_shared<FramePacket>();
         packet->image_ref = cv_ptr;
