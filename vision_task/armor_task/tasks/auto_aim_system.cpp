@@ -135,7 +135,7 @@ ProcessResult AutoAimSystem::processFrame(const cv::Mat &img, std::chrono::stead
     {
         auto aim_start = std::chrono::steady_clock::now();
         std::list<Target> target_list(targets.begin(), targets.end());
-        result.cmd = aimer_.aim(target_list, track_end, bullet_speed_);
+        result.cmd = aimer_.aim(target_list, track_end);
         result.aim_point = aimer_.debug_aim_point;
         result.aim_time_ms = std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - aim_start).count();
     }

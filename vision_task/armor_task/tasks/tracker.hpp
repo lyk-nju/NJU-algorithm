@@ -20,7 +20,7 @@ class Tracker
 
     std::string state() const;
 
-    std::vector<Target> track(std::vector<Armor> &armors, std::chrono::steady_clock::time_point t);
+    std::vector<Target> track(std::vector<Armor> &armors, std::chrono::steady_clock::time_point t,bool enemy_is_red);
 
     bool get_enemy_color(bool iam_red);
 

@@ -13,7 +13,6 @@ namespace armor_task
 Tracker::Tracker(const std::string &config_path, PnpSolver &solver) : solver_{solver}, detect_count_(0), temp_lost_count_(0), state_{"lost"}, pre_state_{"lost"}, last_timestamp_(std::chrono::steady_clock::now()), last_self_is_red_(true)
 {
     auto yaml = YAML::LoadFile(config_path);
-    enemy_color_ = (yaml["enemy_color"].as<std::string>() == "red") ? Color::red : Color::blue;
     min_detect_count_ = yaml["min_detect_count"].as<int>();
     max_temp_lost_count_ = yaml["max_temp_lost_count"].as<int>();
 
@@ -44,8 +43,10 @@ bool Tracker::get_enemy_color(bool iam_red)
     return false;
 }
 
-std::vector<Target> Tracker::track(std::vector<Armor> &armors, std::chrono::steady_clock::time_point t)
+std::vector<Target> Tracker::track(std::vector<Armor> &armors, std::chrono::steady_clock::time_point t,bool enemy_is_red)
 {
+    enemy_color_ = enemy_is_red? Color::red: Color::blue;
+
     auto dt = tools::delta_time(t, last_timestamp_);
     last_timestamp_ = t;
 

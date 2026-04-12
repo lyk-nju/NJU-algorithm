@@ -218,7 +218,7 @@ int main(int argc, char *argv[])
             {
                 auto aim_begin = std::chrono::steady_clock::now();
                 std::list<Target> target_list(targets.begin(), targets.end());
-                latest_autoaim_cmd = aimer.aim(target_list, frame_time, bullet_speed);
+                latest_autoaim_cmd = aimer.aim(target_list, frame_time);
                 latest_aim_point = aimer.debug_aim_point;
                 stats.aim_ms = std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - aim_begin).count();
             }

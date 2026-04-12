@@ -1,6 +1,7 @@
 cmake_minimum_required(VERSION 3.10)
 project(ArmorTask)
 enable_language(CUDA)
+add_subdirectory(io/serial)
 # 设置 C++ 标准
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -104,6 +105,9 @@ set(SOURCES
     tools/pharser.cpp
     tools/visualizer.cpp
     tools/transfer.cpp
+    io/usb/cboard.cpp
+    io/usb/unpack.cpp
+    io/usb/thread_safety.cpp
     io/serial_manager.cpp
     io/keyboard_manager.cpp
     cuda/yolo_decode.cu
@@ -123,6 +127,9 @@ set(SOURCES_NO_VISUALIZER
     tools/draw.cpp
     tools/pharser.cpp
     tools/transfer.cpp
+    io/usb/cboard.cpp
+    io/usb/unpack.cpp
+    io/usb/thread_safety.cpp
     io/serial_manager.cpp
     io/keyboard_manager.cpp
     cuda/yolo_decode.cu
@@ -252,6 +259,18 @@ target_link_libraries(auto_aimer_test
     cudart
     -L/usr/local/cuda/lib64
 )
+
+foreach(tgt
+    video_test
+    camera_sub_test
+    detector_test
+    pnp_solver_test
+    target_test
+    auto_aimer_test
+    communication_test
+)
+    target_link_libraries(${tgt} serial)
+endforeach()
 
 
 # 为所有可执行文件设置 RPATH，强制使用系统 libstdc++
