@@ -44,22 +44,14 @@ Cboard::~Cboard()
 
 PlayerMode Cboard::mode() const
 {
-    std::tuple<Cboard2Vision, std::chrono::steady_clock::time_point> latest{};
-    if (data_queue_.peek_latest(latest))
-    {
-        return std::get<0>(latest).mode_;
-    }
-    return PlayerMode::MANUAL;
+    std::lock_guard<std::mutex> lock(data_mutex_);
+    return mode_;
 }
 
 JudgerData Cboard::judger() const
 {
-    std::tuple<Cboard2Vision, std::chrono::steady_clock::time_point> latest{};
-    if (data_queue_.peek_latest(latest))
-    {
-        return std::get<0>(latest).judge_;
-    }
-    return {};
+    std::lock_guard<std::mutex> lock(data_mutex_);
+    return judge_;
 }
 
 bool Cboard::set_enemy(){
@@ -73,25 +65,22 @@ bool Cboard::set_enemy(){
 
 Eigen::Quaterniond Cboard::q(std::chrono::steady_clock::time_point t)
 {
-    std::tuple<Cboard2Vision, std::chrono::steady_clock::time_point> a;
-    if (!data_queue_.pop(a))
+    if (data_queue_.empty())
     {
         return Eigen::Quaterniond::Identity();
     }
+    TimedQuaternion a = data_queue_.pop();
 
-    std::tuple<Cboard2Vision, std::chrono::steady_clock::time_point> b;
-    if (!data_queue_.front(b))
+    if (data_queue_.empty())
     {
-        const auto &data_a = std::get<0>(a);
-        return Eigen::Quaterniond(data_a.w, data_a.x, data_a.y, data_a.z);
+        return std::get<0>(a);
     }
+    TimedQuaternion b = data_queue_.front();
 
     while (true)
     {
-        const auto &[data_a, t_a] = a;
-        const auto &[data_b, t_b] = b;
-        const Eigen::Quaterniond q_a(data_a.w, data_a.x, data_a.y, data_a.z);
-        const Eigen::Quaterniond q_b(data_b.w, data_b.x, data_b.y, data_b.z);
+        const auto &[q_a, t_a] = a;
+        const auto &[q_b, t_b] = b;
 
         if (t <= t_a) return q_a;
         if (t <= t_b)
@@ -102,7 +91,16 @@ Eigen::Quaterniond Cboard::q(std::chrono::steady_clock::time_point t)
             return q_a.slerp(k, q_b).normalized();
         }
 
-        if (!data_queue_.pop(a) || !data_queue_.front(b)) return q_b;
+        if (data_queue_.empty())
+        {
+            return q_b;
+        }
+        a = data_queue_.pop();
+        if (data_queue_.empty())
+        {
+            return q_b;
+        }
+        b = data_queue_.front();
     }
 }
 
@@ -186,8 +184,7 @@ void Cboard::read_thread()
             continue;
         }
 
-        Cboard2Vision parsed{};
-        if (!unpack::decode(line, parsed))
+        if (!unpack::decode(line, rx_data_))
         {
             ++error_count;
             continue;
@@ -195,7 +192,13 @@ void Cboard::read_thread()
 
         error_count = 0;
         const auto now = std::chrono::steady_clock::now();
-        data_queue_.push(std::make_tuple(parsed, now));
+        {
+            std::lock_guard<std::mutex> lock(data_mutex_);
+            mode_ = rx_data_.mode_;
+            judge_ = rx_data_.judge_;
+        }
+        data_queue_.push(std::make_tuple(
+            Eigen::Quaterniond(rx_data_.w, rx_data_.x, rx_data_.y, rx_data_.z), now));
     }
 }
 

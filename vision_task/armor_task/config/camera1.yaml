@@ -35,3 +35,14 @@ high_speed_delay_time: 0.1275 #高速时延时，单位为s
 low_speed_delay_time: 0.1275 #低速时延时，单位为s
 decision_speed_: 20.0 #低速/高速切换阈值，单位为m/s
 bullet_speed: 22.0
+
+###---海康相机参数---###
+exposure_time: 1000
+gain: 16.9
+adc_bit_depth: 8
+pixel_format: bayer
+auto_white_banlance: false
+auto_exposure_time: false
+acquisition_frame_rate: 250
+vid: #todo
+pid: #todo
