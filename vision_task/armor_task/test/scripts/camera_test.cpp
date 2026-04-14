@@ -1,9 +1,21 @@
 #include "io/camera/camera_base.hpp"
 
+#include <atomic>
 #include <chrono>
+#include <csignal>
 #include <iostream>
 #include <opencv2/opencv.hpp>
 #include <string>
+
+namespace
+{
+std::atomic<bool> g_quit{false};
+
+void handle_signal(int)
+{
+  g_quit.store(true);
+}
+}  // namespace
 
 int main(int argc, char * argv[])
 {
@@ -12,14 +24,26 @@ int main(int argc, char * argv[])
 
   try {
     io::Camera camera(config_path);
+    std::signal(SIGINT, handle_signal);
+    std::signal(SIGTERM, handle_signal);
 
     cv::Mat img;
     std::chrono::steady_clock::time_point timestamp;
     auto last_print = std::chrono::steady_clock::now();
     std::size_t frame_count = 0;
 
-    while (true) {
+    while (!g_quit.load()) {
       camera.read(img, timestamp);
+      if (img.empty()) {
+        if (display) {
+          const int key = cv::waitKey(1);
+          if (key == 'q' || key == 'Q' || key == 27) {
+            break;
+          }
+        }
+        continue;
+      }
+
       ++frame_count;
 
       const auto now = std::chrono::steady_clock::now();
@@ -37,9 +61,12 @@ int main(int argc, char * argv[])
 
       cv::imshow("camera_test", img);
       const int key = cv::waitKey(1);
-      if (key == 'q' || key == 27) {
+      if (key == 'q' || key == 'Q' || key == 27) {
         break;
       }
+    }
+    if (display) {
+      cv::destroyAllWindows();
     }
   } catch (const std::exception & e) {
     std::cerr << "[camera_test] exception: " << e.what() << std::endl;

@@ -41,8 +41,7 @@ camera_name: hik
 exposure_time: 1000
 gain: 16.9
 adc_bit_depth: 8
-pixel_format: bayer
-auto_white_banlance: false
+auto_white_banlance: true
 auto_exposure_time: false
 acquisition_frame_rate: 250
 vid: #todo

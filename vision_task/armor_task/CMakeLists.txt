@@ -30,6 +30,7 @@ find_package(yaml-cpp REQUIRED)
 find_package(spdlog REQUIRED)
 
 find_package(rclcpp REQUIRED)
+find_package(rcl_interfaces REQUIRED)
 find_package(sensor_msgs REQUIRED)
 find_package(geometry_msgs REQUIRED)
 find_package(std_msgs REQUIRED)
@@ -41,6 +42,10 @@ if(cv_bridge_FOUND)
     message(STATUS "cv_bridge_LIBRARIES: ${cv_bridge_LIBRARIES}")
 endif()
 
+include_directories(/opt/ros/humble/include/rcl_interfaces/rcl_interfaces)
+include_directories(/opt/ros/humble/include/rclcpp)
+include_directories(/opt/ros/humble/include/rosidl_typesupport)
+include_directories(/opt/ros/humble/include/rcutils)
 include_directories(/opt/ros/humble/include/cv_bridge)
 include_directories(/usr/local/include/cv_bridge)
 include_directories(/home/user/vision_opencv/cv_bridge/include)
@@ -57,6 +62,8 @@ include_directories(
     ${PROJECT_SOURCE_DIR}/tools
     ${CMAKE_CURRENT_SOURCE_DIR}/test
     ${CMAKE_CURRENT_SOURCE_DIR}/test/utils
+    ${CMAKE_CURRENT_SOURCE_DIR}
+    ${CMAKE_CURRENT_SOURCE_DIR}/io
     ${OpenCV_INCLUDE_DIRS}
     ${cv_bridge_INCLUDE_DIRS}
     ${EIGEN3_INCLUDE_DIR}
@@ -92,12 +99,8 @@ set(SOURCES
     tools/draw.cpp
     tools/pharser.cpp
     tools/visualizer.cpp
-    tools/transfer.cpp
     io/usb/cboard.cpp
     io/usb/unpack.cpp
-    io/usb/thread_safety.cpp
-    io/serial_manager.cpp
-    io/keyboard_manager.cpp
     cuda/yolo_decode.cu
 )
 
@@ -113,12 +116,8 @@ set(SOURCES_NO_VISUALIZER
     tools/math_tools.cpp  
     tools/draw.cpp
     tools/pharser.cpp
-    tools/transfer.cpp
     io/usb/cboard.cpp
     io/usb/unpack.cpp
-    io/usb/thread_safety.cpp
-    io/serial_manager.cpp
-    io/keyboard_manager.cpp
     cuda/yolo_decode.cu
     tasks/postprocess.cu
 )
@@ -129,13 +128,7 @@ set(ROS2_SOURCES
 
 
 add_executable(video_test test/video/video_test.cpp ${SOURCES})
-add_executable(camera_sub_test test/deploy/camera_sub.cpp ${SOURCES} ${ROS2_SOURCES})
-add_executable(detector_test test/deploy/detector.cpp ${SOURCES} ${ROS2_SOURCES})
-add_executable(pnp_solver_test test/deploy/pnp_solver.cpp ${SOURCES} ${ROS2_SOURCES})
-add_executable(target_test test/deploy/target.cpp ${SOURCES} ${ROS2_SOURCES})
-add_executable(auto_aimer_test test/deploy/auto_aimer.cpp ${SOURCES} ${ROS2_SOURCES})
-add_executable(communication_test test/deploy/communication.cpp ${SOURCES_NO_VISUALIZER})
-add_executable(fake_publish test/deploy/fake_publish.cpp)
+ add_executable(auto_aim_test test/deploy/auto_aim/auto_aim.cpp ${SOURCES} ${ROS2_SOURCES})
 add_executable(camera_test
     test/scripts/camera_test.cpp
     io/camera/camera_base.cpp
@@ -158,37 +151,6 @@ target_link_libraries(video_test
 )
 
 
-target_link_libraries(camera_sub_test 
-    ${OpenCV_LIBS} 
-    ${EIGEN3_LIBRARIES} 
-    yaml-cpp 
-    spdlog::spdlog 
-    pthread 
-    rclcpp::rclcpp
-    cv_bridge::cv_bridge
-    visualization_msgs::visualization_msgs__rosidl_typesupport_cpp
-    nvinfer
-    cudart
-    -L/usr/local/cuda/lib64
-)
-
-target_link_libraries(communication_test 
-    ${OpenCV_LIBS} 
-    ${EIGEN3_LIBRARIES} 
-    yaml-cpp 
-    spdlog::spdlog 
-    pthread
-    nvinfer
-    cudart
-    -L/usr/local/cuda/lib64
-)
-
-target_link_libraries(fake_publish
-    pthread
-    rclcpp::rclcpp
-    geometry_msgs::geometry_msgs__rosidl_typesupport_cpp
-)
-
 target_link_directories(camera_test PRIVATE ${HIK_SDK_LIB_DIR})
 target_link_libraries(camera_test
     ${OpenCV_LIBS}
@@ -196,9 +158,11 @@ target_link_libraries(camera_test
     pthread
     usb-1.0
     MvCameraControl
+    rclcpp::rclcpp
+    cv_bridge::cv_bridge
 )
 
-target_link_libraries(detector_test 
+target_link_libraries(auto_aim_test 
     ${OpenCV_LIBS} 
     ${EIGEN3_LIBRARIES} 
     yaml-cpp 
@@ -210,72 +174,12 @@ target_link_libraries(detector_test
     nvinfer
     cudart
     -L/usr/local/cuda/lib64
+    serial
 )
-
-target_link_libraries(pnp_solver_test 
-    ${OpenCV_LIBS} 
-    ${EIGEN3_LIBRARIES} 
-    yaml-cpp 
-    spdlog::spdlog 
-    pthread 
-    rclcpp::rclcpp
-    cv_bridge::cv_bridge
-    visualization_msgs::visualization_msgs__rosidl_typesupport_cpp
-    nvinfer
-    cudart
-    -L/usr/local/cuda/lib64
-)
-
-target_link_libraries(target_test 
-    ${OpenCV_LIBS} 
-    ${EIGEN3_LIBRARIES} 
-    yaml-cpp 
-    spdlog::spdlog 
-    pthread 
-    rclcpp::rclcpp
-    cv_bridge::cv_bridge
-    visualization_msgs::visualization_msgs__rosidl_typesupport_cpp
-    nvinfer
-    cudart
-    -L/usr/local/cuda/lib64
-)
-
-target_link_libraries(auto_aimer_test 
-    ${OpenCV_LIBS} 
-    ${EIGEN3_LIBRARIES} 
-    yaml-cpp 
-    spdlog::spdlog 
-    pthread 
-    rclcpp::rclcpp
-    cv_bridge::cv_bridge
-    visualization_msgs::visualization_msgs__rosidl_typesupport_cpp
-    nvinfer
-    cudart
-    -L/usr/local/cuda/lib64
-)
-
-foreach(tgt
-    video_test
-    camera_sub_test
-    detector_test
-    pnp_solver_test
-    target_test
-    auto_aimer_test
-    communication_test
-)
-    target_link_libraries(${tgt} serial)
-endforeach()
-
 
 set_target_properties(
     video_test 
-    camera_sub_test 
-    detector_test 
-    pnp_solver_test 
-    target_test 
-    auto_aimer_test 
-    communication_test
-    fake_publish
+    auto_aim_test 
     camera_test
     PROPERTIES
         BUILD_RPATH "/usr/lib/x86_64-linux-gnu;${HIK_SDK_LIB_DIR}"
@@ -284,26 +188,14 @@ set_target_properties(
 )
 
 target_compile_options(video_test PRIVATE -Wall -Wextra)
-target_compile_options(camera_sub_test PRIVATE -Wall -Wextra)
-target_compile_options(communication_test PRIVATE -Wall -Wextra)
-target_compile_options(detector_test PRIVATE -Wall -Wextra)
-target_compile_options(pnp_solver_test PRIVATE -Wall -Wextra)
-target_compile_options(target_test PRIVATE -Wall -Wextra)
-target_compile_options(auto_aimer_test PRIVATE -Wall -Wextra)
-target_compile_options(fake_publish PRIVATE -Wall -Wextra)
+target_compile_options(auto_aim_test PRIVATE -Wall -Wextra)
 target_compile_options(camera_test PRIVATE -Wall -Wextra)
 
 set(CMAKE_BUILD_TYPE Debug)
 
 if(CMAKE_BUILD_TYPE STREQUAL "Debug")
     target_compile_options(video_test PRIVATE -g)
-    target_compile_options(camera_sub_test PRIVATE -g)
-    target_compile_options(communication_test PRIVATE -g)
-    target_compile_options(detector_test PRIVATE -g)
-    target_compile_options(pnp_solver_test PRIVATE -g)
-    target_compile_options(target_test PRIVATE -g)
-    target_compile_options(auto_aimer_test PRIVATE -g)
-    target_compile_options(fake_publish PRIVATE -g)
+    target_compile_options(auto_aim_test PRIVATE -g)
     target_compile_options(camera_test PRIVATE -g)
 endif()
 

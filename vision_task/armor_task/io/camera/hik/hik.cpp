@@ -10,11 +10,28 @@
 
 namespace io
 {
+namespace
+{
+unsigned int adc_bit_depth_enum_candidate(int adc_bit_depth)
+{
+  switch (adc_bit_depth) {
+    case 8:
+      return 0U;
+    case 10:
+      return 1U;
+    case 12:
+      return 3U;
+    default:
+      return 0U;
+  }
+}
+}  // namespace
+
 Hik::Hik(const std::string & config_path)
 {
   load_config(config_path);
   if (!rclcpp::ok()) {
-    rclcpp::init(0, nullptr);
+    rclcpp::init(0, nullptr, rclcpp::InitOptions(), rclcpp::SignalHandlerOptions::None);
     owns_ros_context_ = true;
   }
   ros_node_ = rclcpp::Node::make_shared("hik_camera_publisher");
@@ -59,7 +76,11 @@ Hik::~Hik()
 void Hik::read(cv::Mat & img, std::chrono::steady_clock::time_point & timestamp)
 {
   CameraData data{};
-  queue_.pop(data);
+  if (!queue_.pop_for(data, std::chrono::milliseconds(50))) {
+    img.release();
+    timestamp = std::chrono::steady_clock::now();
+    return;
+  }
   img = data.img;
   timestamp = data.timestamp;
 }
@@ -76,9 +97,6 @@ void Hik::load_config(const std::string & config_path)
   }
   if (yaml["adc_bit_depth"]) {
     adc_bit_depth_ = yaml["adc_bit_depth"].as<int>();
-  }
-  if (yaml["pixel_format"]) {
-    pixel_format_ = yaml["pixel_format"].as<std::string>();
   }
   if (yaml["auto_white_banlance"]) {
     auto_white_banlance_ = yaml["auto_white_banlance"].as<bool>();
@@ -239,6 +257,7 @@ void Hik::capture_start()
       }
 
       if (!frame_bgr.empty()) {
+        cv::cvtColor(frame_bgr, frame_bgr, cv::COLOR_BGR2RGB);
         queue_.push(CameraData{frame_bgr, std::chrono::steady_clock::now()});
         publish_frame(frame_bgr);
       }
@@ -265,6 +284,10 @@ void Hik::capture_stop()
 
 void Hik::apply_camera_params()
 {
+  // Ensure free-running acquisition instead of trigger-controlled capture.
+  set_enum_value("TriggerMode", MV_TRIGGER_MODE_OFF);
+  set_enum_value("AcquisitionMode", MV_ACQ_MODE_CONTINUOUS);
+
   const unsigned int white_auto =
     auto_white_banlance_ ? MV_BALANCEWHITE_AUTO_CONTINUOUS : MV_BALANCEWHITE_AUTO_OFF;
   set_enum_value("BalanceWhiteAuto", white_auto);
@@ -281,15 +304,7 @@ void Hik::apply_camera_params()
   set_float_value("Gain", gain_);
   set_float_value("AcquisitionFrameRate", acquisition_frame_rate_);
 
-  set_enum_value("PixelFormat", PixelType_Gvsp_BayerRG8);
-
-  if (adc_bit_depth_ == 8) {
-    set_int_value("ADCBitDepth", 8U);
-  } else if (adc_bit_depth_ == 10) {
-    set_int_value("ADCBitDepth", 10U);
-  } else if (adc_bit_depth_ == 12) {
-    set_int_value("ADCBitDepth", 12U);
-  }
+  set_adc_bit_depth();
 }
 
 bool Hik::set_float_value(const char * name, float value)
@@ -312,14 +327,44 @@ bool Hik::set_enum_value(const char * name, unsigned int value)
   return true;
 }
 
-bool Hik::set_int_value(const char * name, unsigned int value)
+bool Hik::get_enum_value(const char * name, MVCC_ENUMVALUE & value) const
 {
-  const int ret = MV_CC_SetIntValue(handle_, name, value);
+  const int ret = MV_CC_GetEnumValue(handle_, name, &value);
   if (ret != MV_OK) {
-    std::cerr << "[Hik] MV_CC_SetIntValue(" << name << ") failed: " << std::hex << ret << std::dec << std::endl;
+    std::cerr << "[Hik] MV_CC_GetEnumValue(" << name << ") failed: " << std::hex << ret << std::dec << std::endl;
     return false;
   }
   return true;
+}
+
+void Hik::set_adc_bit_depth()
+{
+  if (adc_bit_depth_ != 8 && adc_bit_depth_ != 10 && adc_bit_depth_ != 12) {
+    std::cerr << "[Hik] Unsupported adc_bit_depth_: " << adc_bit_depth_ << std::endl;
+    return;
+  }
+
+  MVCC_ENUMVALUE enum_value{};
+  if (!get_enum_value("ADCBitDepth", enum_value)) {
+    std::cerr << "[Hik] Unable to read ADCBitDepth enum node." << std::endl;
+    return;
+  }
+
+  const unsigned int target = adc_bit_depth_enum_candidate(adc_bit_depth_);
+  bool supported = false;
+  for (unsigned int i = 0; i < enum_value.nSupportedNum; ++i) {
+    if (enum_value.nSupportValue[i] == target) {
+      supported = true;
+      break;
+    }
+  }
+  if (!supported) {
+    std::cerr << "[Hik] ADCBitDepth target enum is unsupported: " << target << std::endl;
+    return;
+  }
+  if (enum_value.nCurValue != target && !set_enum_value("ADCBitDepth", target)) {
+    std::cerr << "[Hik] Unable to set ADCBitDepth enum to: " << target << std::endl;
+  }
 }
 
 void Hik::reset_usb() const

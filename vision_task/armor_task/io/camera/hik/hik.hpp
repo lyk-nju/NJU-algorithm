@@ -32,7 +32,6 @@ private:
   float exposure_time_ = 1000.0F;
   float gain_ = 16.9F;
   int adc_bit_depth_ = 8;
-  std::string pixel_format_ = "bayer";
   bool auto_white_banlance_ = false;
   bool auto_exposure_time_ = false;
   float acquisition_frame_rate_ = 250.0F;
@@ -55,7 +54,8 @@ private:
 
   bool set_float_value(const char * name, float value);
   bool set_enum_value(const char * name, unsigned int value);
-  bool set_int_value(const char * name, unsigned int value);
+  bool get_enum_value(const char * name, MVCC_ENUMVALUE & value) const;
+  void set_adc_bit_depth();
   void reset_usb() const;
   void publish_frame(const cv::Mat & frame);
 

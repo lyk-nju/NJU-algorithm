@@ -2,6 +2,7 @@
 #define TOOLS__THREAD_SAFE_QUEUE_HPP
 
 #include <condition_variable>
+#include <chrono>
 #include <functional>
 #include <iostream>
 #include <mutex>
@@ -49,6 +50,21 @@ public:
 
     value = queue_.front();
     queue_.pop();
+  }
+
+  bool pop_for(T & value, const std::chrono::milliseconds timeout)
+  {
+    std::unique_lock<std::mutex> lock(mutex_);
+
+    const bool has_data = not_empty_condition_.wait_for(
+      lock, timeout, [this] { return !queue_.empty(); });
+    if (!has_data) {
+      return false;
+    }
+
+    value = queue_.front();
+    queue_.pop();
+    return true;
   }
 
   T pop()
