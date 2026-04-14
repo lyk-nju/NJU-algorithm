@@ -1,4 +1,5 @@
-yolo_model_path: /home/nvidia/NJU-algorithm/vision_task/armor_task/models/new.engine
-video_path : /home/nvidia/NJU-algorithm/vision_task/armor_task/assets/camera_record.avi
-config_path : /home/nvidia/NJU-algorithm/vision_task/armor_task/config/camera1.yaml
+yolo_model_path: ../models/best.onnx
+video_path : /home/user/NJU-algorithm/vision_task/armor_task/assets/circular.avi
+config_path : /home/user/NJU-algorithm/vision_task/armor_task/config/camera1.yaml
 bullet_speed : 22
+playback_fps : 10

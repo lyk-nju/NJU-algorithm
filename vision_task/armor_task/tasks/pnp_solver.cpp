@@ -1,4 +1,6 @@
 #include "pnp_solver.hpp"
+#include "aimer.hpp"
+#include "target.hpp"
 #include "../tools/math_tools.hpp"
 #include <cmath>
 #include <opencv2/core/eigen.hpp>
@@ -262,6 +264,28 @@ std::vector<cv::Point2f> PnpSolver::reproject_armor(const Eigen::Vector3d &p_wor
     const auto &object_points = islarge ? BIG_ARMOR_POINTS : SMALL_ARMOR_POINTS;
     cv::projectPoints(object_points, rvec, tvec, camera_matrix_, distort_coeffs_, image_points);
     return image_points;
+}
+
+std::vector<std::vector<cv::Point2f>> PnpSolver::reproject_armor(const Target &target) const
+{
+    std::vector<std::vector<cv::Point2f>> all_corners;
+    const bool is_large = (target.car_num == 1);
+    const auto xyza_list = target.armor_xyza_list();
+    all_corners.reserve(xyza_list.size());
+    for (const auto &xyza : xyza_list)
+    {
+        all_corners.emplace_back(reproject_armor(xyza.head<3>(), xyza[3], is_large));
+    }
+    return all_corners;
+}
+
+std::vector<cv::Point2f> PnpSolver::reproject_armor(const AimPoint &aim_point, bool islarge) const
+{
+    if (!aim_point.valid)
+    {
+        return {};
+    }
+    return reproject_armor(aim_point.xyza.head<3>(), aim_point.xyza[3], islarge);
 }
 
 }  // namespace armor_task

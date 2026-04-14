@@ -8,6 +8,8 @@
 
 namespace armor_task
 {
+Detector::Detector() : Detector("../models/best.engine") {}
+
 Detector::Detector(const std::string &yolo_model_path) : input_width_(640), input_height_(640), confidence_threshold_(0.55f), nms_threshold_(0.5f), scale_(1.0f), pad_x_(0.0f), pad_y_(0.0f)
 {
     // 初始化类别名称 - 36个装甲板类别
@@ -141,7 +143,7 @@ ArmorArray Detector::detect(const cv::Mat &frame)
     cv::Mat input_blob = preprocess(frame, input_width_, input_height_);
 
     // 模块二：搜索装甲板
-    return search_armors(frame, cv::Mat());
+    return search_armors(frame, input_blob);
 }
 
 // cv::Mat Detector::preprocess(const cv::Mat &input_image, int target_width, int target_height)
@@ -187,6 +189,32 @@ ArmorArray Detector::detect(const cv::Mat &frame)
 cv::Mat Detector::preprocess(const cv::Mat &input_image, int target_width, int target_height)
 {
     if (input_image.empty()) return cv::Mat();
+
+    if (!is_trt_)
+    {
+        // 与训练时一致的 letterbox 预处理（保持长宽比 + zero padding）
+        const int src_w = input_image.cols;
+        const int src_h = input_image.rows;
+        const float r_w = static_cast<float>(target_width) / static_cast<float>(src_w);
+        const float r_h = static_cast<float>(target_height) / static_cast<float>(src_h);
+        scale_ = std::min(r_w, r_h);
+
+        const int new_unpad_w = static_cast<int>(std::round(src_w * scale_));
+        const int new_unpad_h = static_cast<int>(std::round(src_h * scale_));
+        pad_x_ = (target_width - new_unpad_w) * 0.5f;
+        pad_y_ = (target_height - new_unpad_h) * 0.5f;
+
+        cv::Mat resized;
+        cv::resize(input_image, resized, cv::Size(new_unpad_w, new_unpad_h));
+        cv::Mat padded(target_height, target_width, input_image.type(), cv::Scalar(0, 0, 0));
+        const cv::Rect roi(static_cast<int>(pad_x_), static_cast<int>(pad_y_), new_unpad_w, new_unpad_h);
+        resized.copyTo(padded(roi));
+
+        cv::Mat blob;
+        cv::dnn::blobFromImage(
+            padded, blob, 1.0f / 255.0f, cv::Size(target_width, target_height), cv::Scalar(0, 0, 0), true, false, CV_32F);
+        return blob;
+    }
 
     // 1. 懒加载：分配 GPU 内存用于存原始图片
     // 计算需要的字节数 (Height * Step)
@@ -447,16 +475,117 @@ ArmorArray Detector::search_armors(const cv::Mat &frame, const cv::Mat &input_bl
     }
     else
     {
-        // 保持原有的 OpenCV 推理逻辑作为 fallback
+        // OpenCV DNN ONNX 推理
         std::vector<cv::Mat> outputs;
         yolo_net_.setInput(input_blob);
-        yolo_net_.forward(outputs, yolo_net_.getUnconnectedOutLayersNames());
-        if (outputs.empty()) return detected_armors;
-        // 将 OpenCV 输出的数据拷贝到 cpu_output_buffer_ 以统一处理逻辑
-        // 注意：此处仅为兼容代码，实际使用建议全程 TensorRT
-        float* data = (float*)outputs[0].data;
-        size_t size = outputs[0].total();
-        cpu_output_buffer_.assign(data, data + size);
+        try
+        {
+            yolo_net_.forward(outputs, yolo_net_.getUnconnectedOutLayersNames());
+        }
+        catch (const cv::Exception &e)
+        {
+            std::cerr << "Error during DNN forward pass: " << e.what() << std::endl;
+            return detected_armors;
+        }
+        if (outputs.empty() || outputs[0].empty())
+        {
+            return detected_armors;
+        }
+
+        // ONNX 路径使用 CPU 后处理（避免依赖 TensorRT 的 device_output_buffer_）
+        const cv::Mat &detection_output = outputs[0];
+        if (detection_output.dims != 3)
+        {
+            std::cerr << "Error: Unsupported ONNX output dims = " << detection_output.dims << std::endl;
+            return detected_armors;
+        }
+
+        const int rows = detection_output.size[1];
+        const int cols = detection_output.size[2];
+        cv::Mat reshaped = detection_output.reshape(1, rows * cols);
+        cv::Mat transposed;
+        cv::transpose(reshaped.reshape(1, rows), transposed);
+
+        std::vector<int> class_ids;
+        std::vector<float> confidences;
+        std::vector<cv::Rect> boxes;
+        std::vector<std::vector<cv::Point2f>> armor_corners;
+        class_ids.reserve(cols);
+        confidences.reserve(cols);
+        boxes.reserve(cols);
+        armor_corners.reserve(cols);
+
+        for (int i = 0; i < cols; i++)
+        {
+            cv::Mat scores = transposed.row(i).colRange(4, 40); // 36 类
+            cv::Point class_id_point;
+            double max_class_score = 0.0;
+            cv::minMaxLoc(scores, nullptr, &max_class_score, nullptr, &class_id_point);
+            if (max_class_score <= confidence_threshold_)
+            {
+                continue;
+            }
+
+            const float cx = transposed.at<float>(i, 0);
+            const float cy = transposed.at<float>(i, 1);
+            const float w = transposed.at<float>(i, 2);
+            const float h = transposed.at<float>(i, 3);
+
+            float left = (cx - 0.5f * w - pad_x_) / scale_;
+            float top = (cy - 0.5f * h - pad_y_) / scale_;
+            float width = w / scale_;
+            float height = h / scale_;
+            left = std::max(0.0f, std::min(left, static_cast<float>(frame.cols - 1)));
+            top = std::max(0.0f, std::min(top, static_cast<float>(frame.rows - 1)));
+            width = std::max(1.0f, std::min(width, static_cast<float>(frame.cols) - left));
+            height = std::max(1.0f, std::min(height, static_cast<float>(frame.rows) - top));
+
+            std::vector<cv::Point2f> corners(4);
+            for (int j = 0; j < 4; j++)
+            {
+                const float kx = transposed.at<float>(i, 40 + j * 2);
+                const float ky = transposed.at<float>(i, 40 + j * 2 + 1);
+                corners[j].x = (kx - pad_x_) / scale_;
+                corners[j].y = (ky - pad_y_) / scale_;
+            }
+
+            boxes.emplace_back(
+                static_cast<int>(left), static_cast<int>(top), static_cast<int>(width), static_cast<int>(height));
+            class_ids.push_back(class_id_point.x);
+            confidences.push_back(static_cast<float>(max_class_score));
+            armor_corners.push_back(corners);
+        }
+
+        std::vector<int> indices;
+        cv::dnn::NMSBoxes(boxes, confidences, confidence_threshold_, nms_threshold_, indices);
+        int armor_id = 0;
+        for (int idx : indices)
+        {
+            const cv::Rect &box = boxes[idx];
+            if (box.width <= 0 || box.height <= 0 || box.x < 0 || box.y < 0 || box.x + box.width >= frame.cols ||
+                box.y + box.height >= frame.rows)
+            {
+                continue;
+            }
+
+            const int class_id = class_ids[idx];
+            auto lightbars = extract_lightbars_from_corners(armor_corners[idx]);
+            Armor armor(lightbars.first, lightbars.second, armor_id++, box);
+            armor.confidence = confidences[idx];
+            armor.color = get_armor_color(class_id);
+            armor.corners = armor_corners[idx];
+            if (class_id >= 0 && class_id < 18)
+            {
+                armor.car_num = (class_id < 9) ? class_id : (class_id - 9);
+            }
+            else
+            {
+                armor.car_num = -1;
+            }
+            detected_armors.push_back(armor);
+        }
+
+        return detected_armors;
     }
 
     // 2. 后处理 (Post-processing) - 核心优化

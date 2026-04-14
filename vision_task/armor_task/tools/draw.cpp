@@ -12,17 +12,81 @@
 namespace tools
 {
 
-void draw_box(cv::Mat &img, const cv::Rect &box, const cv::Scalar &color, int thickness)
+// 传入四个角点，画倾斜装甲板轮廓和中轴线。
+void draw_box(cv::Mat &img, const std::vector<cv::Point2f> &corners, const cv::Scalar &color, int thickness)
 {
-    cv::rectangle(img, box, color, thickness);
+    if (corners.size() != 4)
+    {
+        return;
+    }
+
+    draw_point(img, corners, color, thickness);
+
+    // 在倾斜框中画一条“左右中心连线”，更直观看出朝向与倾斜程度
+    cv::Point2f left_center = 0.5f * (corners[0] + corners[3]);
+    cv::Point2f right_center = 0.5f * (corners[1] + corners[2]);
+    cv::line(img, left_center, right_center, color, std::max(1, thickness - 1), cv::LINE_AA);
 }
 
+// 传入 Armor，优先使用 armor.corners 画倾斜框。
+void draw_box(cv::Mat &img, const Armor &armor, const cv::Scalar &color, int thickness)
+{
+    if (armor.corners.size() == 4)
+    {
+        draw_box(img, armor.corners, color, thickness);
+    }
+}
+
+// 传入 Target，重投影其全部装甲板并逐个画倾斜框。
+void draw_box(cv::Mat &img, const Target &target, const armor_task::PnpSolver &pnp_solver, const cv::Scalar &color, int thickness)
+{
+    const auto all_corners = pnp_solver.reproject_armor(target);
+    for (const auto &corners : all_corners)
+    {
+        if (corners.size() < 4)
+        {
+            continue;
+        }
+        draw_box(img, corners, color, thickness);
+    }
+}
+
+// 传入 AimPoint，重投影后画该瞄准装甲板的倾斜框。
+void draw_box(cv::Mat &img, const AimPoint &aim_point, const armor_task::PnpSolver &pnp_solver, const cv::Scalar &color, int thickness, bool islarge)
+{
+    const auto corners = pnp_solver.reproject_armor(aim_point, islarge);
+    if (corners.size() < 4)
+    {
+        return;
+    }
+    draw_box(img, corners, color, thickness);
+}
+
+// 传入单个像素点，画实心圆点。
 void draw_point(cv::Mat &img, const cv::Point &point, const cv::Scalar &color, int radius)
 {
     cv::circle(img, point, radius, color, -1);
 }
 
-void draw_points(cv::Mat &img, const std::vector<cv::Point> &points, const cv::Scalar &color, int thickness)
+// 传入 AimPoint，重投影后画其中心点。
+void draw_point(cv::Mat &img, const AimPoint &aim_point, const armor_task::PnpSolver &pnp_solver, const cv::Scalar &color, int radius, bool islarge)
+{
+    const auto corners = pnp_solver.reproject_armor(aim_point, islarge);
+    if (corners.empty())
+    {
+        return;
+    }
+    cv::Point2f sum(0.0F, 0.0F);
+    for (const auto &pt : corners)
+    {
+        sum += pt;
+    }
+    const cv::Point2f center = sum * (1.0F / static_cast<float>(corners.size()));
+    draw_point(img, cv::Point(cvRound(center.x), cvRound(center.y)), color, radius);
+}
+
+// 传入整数点集，单点画圆，多点按闭合折线连接绘制。
+void draw_point(cv::Mat &img, const std::vector<cv::Point> &points, const cv::Scalar &color, int thickness)
 {
     if (points.empty())
     {
@@ -36,7 +100,8 @@ void draw_points(cv::Mat &img, const std::vector<cv::Point> &points, const cv::S
     cv::polylines(img, points, true, color, thickness, cv::LINE_AA);
 }
 
-void draw_points(cv::Mat &img, const std::vector<cv::Point2f> &points, const cv::Scalar &color, int thickness)
+// 传入浮点点集，转换到像素点后按闭合折线绘制。
+void draw_point(cv::Mat &img, const std::vector<cv::Point2f> &points, const cv::Scalar &color, int thickness)
 {
     std::vector<cv::Point> int_points;
     int_points.reserve(points.size());
@@ -44,9 +109,10 @@ void draw_points(cv::Mat &img, const std::vector<cv::Point2f> &points, const cv:
     {
         int_points.emplace_back(cvRound(pt.x), cvRound(pt.y));
     }
-    draw_points(img, int_points, color, thickness);
+    draw_point(img, int_points, color, thickness);
 }
 
+// 传入文本和锚点位置，在图像上绘制文字。
 void draw_text(cv::Mat &img, const std::string &text, const cv::Point &point, const cv::Scalar &color, double font_scale, int thickness)
 {
     cv::putText(img, text, point, cv::FONT_HERSHEY_SIMPLEX, font_scale, color, thickness, cv::LINE_AA);
@@ -212,6 +278,10 @@ void drawProjectedTrajectory(cv::Mat &img, const std::vector<cv::Point2f> &image
 
 } // namespace
 
+namespace tools
+{
+
+// 传入目标三维点，画弹道轨迹投影线。
 void drawTrajectory(cv::Mat &img, const Eigen::Vector3d &target_pos, double bullet_speed, const std::string &config_path)
 {
     const auto camera_params = loadCameraParameters(config_path);
@@ -230,6 +300,7 @@ void drawTrajectory(cv::Mat &img, const Eigen::Vector3d &target_pos, double bull
     drawProjectedTrajectory(img, image_points);
 }
 
+// 传入 AimPoint，画目标对应的弹道轨迹投影线。
 void drawTrajectory(cv::Mat &img,
                     const AimPoint &aim_point,
                     double bullet_speed,
@@ -255,6 +326,7 @@ void drawTrajectory(cv::Mat &img,
     drawProjectedTrajectory(img, image_points);
 }
 
+// 传入 yaw/pitch，按指定射角画弹道轨迹投影线。
 void drawTrajectory(cv::Mat &img,
                     double yaw_gimbal,
                     double pitch_gimbal,
@@ -274,3 +346,5 @@ void drawTrajectory(cv::Mat &img,
     const auto image_points = projectWorldToImage(world_points, R_camera2gimbal, t_camera2gimbal, R_gimbal2world, camera_matrix, distort_coeffs);
     drawProjectedTrajectory(img, image_points);
 }
+
+} // namespace tools

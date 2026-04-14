@@ -1,6 +1,6 @@
 #pragma once
 
-#include "../io/serial_manager.hpp"
+#include "../io/usb/cboard.hpp"
 #include "aimer.hpp"
 #include "detector.hpp"
 #include "pnp_solver.hpp"

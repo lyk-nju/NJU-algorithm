@@ -5,7 +5,7 @@
 #include <chrono>
 #include <list>
 
-#include "../io/serial_manager.hpp"
+#include "../io/usb/cboard.hpp"
 #include "target.hpp"
 
 // aimer内部只管yaw角的计算，pitch角的计算交给trajectory模块

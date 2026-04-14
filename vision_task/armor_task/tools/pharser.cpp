@@ -149,6 +149,7 @@ TestConfig load_deploy_test_config(const std::string &config_path)
     config.video_path = "";
     config.config_path = "../config/demo.yaml";
     config.bullet_speed = 24.0;
+    config.playback_fps = 10;
     config.send_port = "/dev/ttyUSB0";
     config.receive_port = "/dev/ttyUSB1";
 
@@ -177,6 +178,15 @@ TestConfig load_deploy_test_config(const std::string &config_path)
             if (yaml["bullet_speed"])
             {
                 config.bullet_speed = yaml["bullet_speed"].as<double>();
+            }
+            if (yaml["playback_fps"])
+            {
+                config.playback_fps = yaml["playback_fps"].as<int>();
+            }
+            else if (yaml["max_frames"])
+            {
+                // Backward compatibility: previously misunderstood as frame count.
+                config.playback_fps = yaml["max_frames"].as<int>();
             }
             
             if (yaml["send_port"])
@@ -210,6 +220,7 @@ TestConfig load_deploy_test_config(const std::string &config_path)
             std::cout << "  Video path: " << config.video_path << std::endl;
             std::cout << "  Config path: " << config.config_path << std::endl;
             std::cout << "  Bullet speed: " << config.bullet_speed << " m/s" << std::endl;
+            std::cout << "  Playback FPS: " << config.playback_fps << std::endl;
             std::cout << "  Send port: " << config.send_port << std::endl;
             std::cout << "  Receive port: " << config.receive_port << std::endl;
         }
@@ -232,10 +243,11 @@ TestConfig load_video_test_config(const std::string &config_path)
     TestConfig config;
     
     // 设置默认值
-    config.yolo_model_path = "../models/best.onnx";
+    config.yolo_model_path = "../models/best.engine";
     config.video_path = "../assets/circular.avi";
     config.config_path = "../config/demo.yaml";
     config.bullet_speed = 24.0;
+    config.playback_fps = 10;
     config.send_port = "";  // video 测试不需要串口
     config.receive_port = "";
 
@@ -265,12 +277,22 @@ TestConfig load_video_test_config(const std::string &config_path)
             {
                 config.bullet_speed = yaml["bullet_speed"].as<double>();
             }
+            if (yaml["playback_fps"])
+            {
+                config.playback_fps = yaml["playback_fps"].as<int>();
+            }
+            else if (yaml["max_frames"])
+            {
+                // Backward compatibility: previously misunderstood as frame count.
+                config.playback_fps = yaml["max_frames"].as<int>();
+            }
             
             std::cout << "Loaded video test config from: " << config_path << std::endl;
             std::cout << "  YOLO model: " << config.yolo_model_path << std::endl;
             std::cout << "  Video path: " << config.video_path << std::endl;
             std::cout << "  Config path: " << config.config_path << std::endl;
             std::cout << "  Bullet speed: " << config.bullet_speed << " m/s" << std::endl;
+            std::cout << "  Playback FPS: " << config.playback_fps << std::endl;
         }
         else
         {

@@ -59,6 +59,7 @@ include_directories(
     ${CMAKE_CURRENT_SOURCE_DIR}/include
     ${CMAKE_CURRENT_SOURCE_DIR}/tasks
     ${CMAKE_CURRENT_SOURCE_DIR}/tools
+    ${CMAKE_CURRENT_SOURCE_DIR}/io/serial/include
     ${PROJECT_SOURCE_DIR}/tools
     ${CMAKE_CURRENT_SOURCE_DIR}/test
     ${CMAKE_CURRENT_SOURCE_DIR}/test/utils
@@ -93,14 +94,30 @@ set(SOURCES
     tasks/tracker.cpp
     tasks/ekf.cpp
     tasks/aimer.cpp
+    tasks/shooter.cpp
     tasks/target.cpp
     tasks/trajectory_normal.cpp
     tools/math_tools.cpp  
     tools/draw.cpp
     tools/pharser.cpp
     tools/visualizer.cpp
-    io/usb/cboard.cpp
-    io/usb/unpack.cpp
+    cuda/yolo_decode.cu
+)
+
+set(VIDEO_TEST_SOURCES
+    tasks/postprocess.cu
+    tasks/detector.cpp
+    tasks/pnp_solver.cpp
+    tasks/tracker.cpp
+    tasks/ekf.cpp
+    tasks/aimer.cpp
+    tasks/shooter.cpp
+    tasks/target.cpp
+    tasks/trajectory_normal.cpp
+    tools/math_tools.cpp
+    tools/draw.cpp
+    tools/pharser.cpp
+    tools/visualizer.cpp
     cuda/yolo_decode.cu
 )
 
@@ -127,7 +144,7 @@ set(ROS2_SOURCES
 )
 
 
-add_executable(video_test test/video/video_test.cpp ${SOURCES})
+add_executable(video_test test/video/video_test.cpp ${VIDEO_TEST_SOURCES})
  add_executable(auto_aim_test test/deploy/auto_aim/auto_aim.cpp ${SOURCES} ${ROS2_SOURCES})
 add_executable(camera_test
     test/scripts/camera_test.cpp

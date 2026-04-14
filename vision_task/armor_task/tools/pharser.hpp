@@ -28,6 +28,7 @@ struct TestConfig
     std::string video_path;
     std::string config_path;  // demo.yaml 路径
     double bullet_speed;
+    int playback_fps;
     std::string send_port;
     std::string receive_port;
 };
@@ -47,4 +48,3 @@ TestConfig load_deploy_test_config(const std::string &config_path = "../config/d
 TestConfig load_video_test_config(const std::string &config_path = "../config/video_test.yaml");
 
 #endif // PHARSER_HPP
-

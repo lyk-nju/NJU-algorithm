@@ -319,7 +319,6 @@ bool Tracker::update_target(std::vector<Armor> &armors, std::chrono::steady_cloc
     target_.update(*best_armor);
     return true;
 }
-}
 // bool Tracker::update_target(std::vector<Armor> &armors, std::chrono::steady_clock::time_point t)
 // {
 //     // 1. 棰勬祴蹇呴』鍋?
@@ -364,4 +363,3 @@ bool Tracker::update_target(std::vector<Armor> &armors, std::chrono::steady_cloc
 // } // namespace armor_task
 
 } // namespace armor_task
-

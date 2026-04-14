@@ -10,6 +10,8 @@
 
 namespace armor_task
 {
+class Target;
+struct AimPoint;
 
 class PnpSolver
 {
@@ -38,6 +40,8 @@ class PnpSolver
     double armor_reprojection_error(const Armor &armor, double yaw, const double &inclined) const;
 
     std::vector<cv::Point2f> reproject_armor(const Eigen::Vector3d &p_world, double yaw, bool islarge) const;
+    std::vector<std::vector<cv::Point2f>> reproject_armor(const Target &target) const;
+    std::vector<cv::Point2f> reproject_armor(const AimPoint &aim_point, bool islarge = false) const;
     double SJTU_cost(const std::vector<cv::Point2f> &cv_refs, const std::vector<cv::Point2f> &cv_pts, const double &inclined) const;
 
     const cv::Mat &camera_matrix() const { return camera_matrix_; }

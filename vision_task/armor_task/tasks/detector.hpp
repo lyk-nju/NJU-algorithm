@@ -29,6 +29,9 @@ public:
 class Detector
 {
   public:
+    // 默认加载 video_test 使用的 ONNX 模型
+    Detector();
+
     // 构造函数
     Detector(const std::string &yolo_model_path);
 

@@ -702,7 +702,7 @@ int main(int argc, char *argv[])
                 drawTargetInfo(display_frame, targets, tracker.state(), pnp_solver);
                 if (latest_aim_point.valid)
                 {
-                    drawTrajectory(display_frame, latest_aim_point, bullet_speed, config_path, camera_matrix, distort_coeffs, pnp_solver.R_gimbal2world_);
+                    tools::drawTrajectory(display_frame, latest_aim_point, bullet_speed, config_path, camera_matrix, distort_coeffs, pnp_solver.R_gimbal2world_);
                 }
             }
 
