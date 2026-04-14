@@ -46,3 +46,8 @@ auto_exposure_time: false
 acquisition_frame_rate: 250
 vid: #todo
 pid: #todo
+
+###---Shooter参数---###
+first_tolerance: 3 # 近距离射击容差，degree
+second_tolerance: 2 # 远距离射击容差，degree
+judge_distance: 2 #距离判断阈值

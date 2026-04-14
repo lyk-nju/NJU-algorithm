@@ -1,7 +1,7 @@
 #include "tracker.hpp"
 #include <yaml-cpp/yaml.h>
 
-#include <algorithm> // 如果尚未包含
+#include <algorithm> // 濡傛灉灏氭湭鍖呭惈
 #include <iostream>
 #include <numeric>
 #include <tuple>
@@ -16,7 +16,7 @@ Tracker::Tracker(const std::string &config_path, PnpSolver &solver) : solver_{so
     min_detect_count_ = yaml["min_detect_count"].as<int>();
     max_temp_lost_count_ = yaml["max_temp_lost_count"].as<int>();
 
-    // 初始化 temp_lost 阈值（使用配置文件中的值）
+    // 鍒濆鍖?temp_lost 闃堝€硷紙浣跨敤閰嶇疆鏂囦欢涓殑鍊硷級
     normal_temp_lost_count_ = max_temp_lost_count_;
 
 }
@@ -55,7 +55,7 @@ std::vector<Target> Tracker::track(std::vector<Armor> &armors, std::chrono::stea
     //   state_ = "lost";
     // }
 
-    // 过滤掉非我方装甲板
+    // 杩囨护鎺夐潪鎴戞柟瑁呯敳鏉?
     // for (const auto &armor : armors)
     // {
     //     std::cout << "Armor1 "  << " color: " << armor.color << " center: (" << armor.center.x << ", " << armor.center.y << ")" << std::endl;
@@ -69,7 +69,7 @@ std::vector<Target> Tracker::track(std::vector<Armor> &armors, std::chrono::stea
     // }
 
     //std::cout<<"total num of amrmors"<<armors.size()<<std::endl;
-    // 过滤前哨站顶部装甲板
+    // 杩囨护鍓嶅摠绔欓《閮ㄨ鐢叉澘
     // armors.remove_if([this](const auto_aim::Armor & a) {
     //   return a.name == ArmorName::outpost &&
     //          solver_.oupost_reprojection_error(a, 27.5 * CV_PI / 180.0) <
@@ -77,7 +77,7 @@ std::vector<Target> Tracker::track(std::vector<Armor> &armors, std::chrono::stea
     // });
 
     // if (armors.size() > 3) {
-    //  优先选择靠近图像中心的装甲板
+    //  浼樺厛閫夋嫨闈犺繎鍥惧儚涓績鐨勮鐢叉澘
     const cv::Point2f img_center(1440.0f / 2.0f, 1080.0f / 2.0f);
     std::sort(armors.begin(),
               armors.end(),
@@ -88,13 +88,13 @@ std::vector<Target> Tracker::track(std::vector<Armor> &armors, std::chrono::stea
                   return d1 < d2;
               });
 
-    // 保留排序后的前三个
+    // 淇濈暀鎺掑簭鍚庣殑鍓嶄笁涓?
     // auto it = armors.begin();
     // std::advance(it, 3);
     // armors.erase(it, armors.end());
     //}
 
-    // 按优先级排序，优先级最高在首位(优先级越高数字越小，1的优先级最高)
+    // 鎸変紭鍏堢骇鎺掑簭锛屼紭鍏堢骇鏈€楂樺湪棣栦綅(浼樺厛绾ц秺楂樻暟瀛楄秺灏忥紝1鐨勪紭鍏堢骇鏈€楂?
     //   armors.sort(
     //     [](const auto_aim::Armor & a, const auto_aim::Armor & b) { return a.priority < b.priority; });
 
@@ -115,7 +115,7 @@ std::vector<Target> Tracker::track(std::vector<Armor> &armors, std::chrono::stea
     // {
     //     std::cout << "[Tracker Internal] State change: " << pre_state_ << " -> " << state_ << std::endl;
 
-    //     // 特别标记switching状态的出现和结束
+    //     // 鐗瑰埆鏍囪switching鐘舵€佺殑鍑虹幇鍜岀粨鏉?
     //     if (state_ == "switching")
     //     {
     //         std::cout << "[Tracker Internal] !!! SWITCHING state ENTERED !!!" << std::endl;
@@ -129,14 +129,14 @@ std::vector<Target> Tracker::track(std::vector<Armor> &armors, std::chrono::stea
     // std::cout << "PRESTATE:" << pre_state_ << std::endl;
     // std::cout << "STATE:" << state_ << std::endl;
 
-    // // 发散检测
+    // // 鍙戞暎妫€娴?
     // if (state_ != "lost" && target_.diverged()) {
     //   //tools::logger()->debug("[Tracker] Target diverged!");
     //   state_ = "lost";
     //   return {};
     // }
 
-    // //收敛效果检测：
+    // //鏀舵暃鏁堟灉妫€娴嬶細
     // if (
     //   std::accumulate(
     //     target_.ekf().nis_failures.begin(), target_.ekf().nis_failures.end(), 0) >=
@@ -203,20 +203,20 @@ void Tracker::state_machine(bool found)
         {
             // std::cout << "[Tracker] Recovering from temp_lost to tracking" << std::endl;
             state_ = "tracking";
-            temp_lost_count_ = 0; // 重置计数器
+            temp_lost_count_ = 0; // 閲嶇疆璁℃暟鍣?
         }
         else
         {
             temp_lost_count_++;
             // if (target_.name == ArmorName::outpost)
-            //   //前哨站的temp_lost_count需要设置的大一些
+            //   //鍓嶅摠绔欑殑temp_lost_count闇€瑕佽缃殑澶т竴浜?
             //   max_temp_lost_count_ = outpost_max_temp_lost_count_;
             // else
             max_temp_lost_count_ = normal_temp_lost_count_;
 
-            // 添加调试输出
+            // 娣诲姞璋冭瘯杈撳嚭
             if (temp_lost_count_ % 10 == 0)
-            { // 每10帧打印一次，避免输出过多
+            { // 姣?0甯ф墦鍗颁竴娆★紝閬垮厤杈撳嚭杩囧
               // std::cout << "[Tracker] temp_lost_count: " << temp_lost_count_ << " / " << max_temp_lost_count_ << std::endl;
             }
 
@@ -245,7 +245,7 @@ bool Tracker::set_target(std::vector<Armor> &armors, std::chrono::steady_clock::
     auto &armor = armors.front();
     solver_._solve_pnp(armor);
 
-    //   // 根据兵种优化初始化参数
+    //   // 鏍规嵁鍏电浼樺寲鍒濆鍖栧弬鏁?
     //   auto is_balance = (armor.type == ArmorType::big) &&
     //                     (armor.name == ArmorName::three || armor.name == ArmorName::four ||
     //                      armor.name == ArmorName::five);
@@ -268,7 +268,7 @@ bool Tracker::set_target(std::vector<Armor> &armors, std::chrono::steady_clock::
     //   else {
     Eigen::VectorXd P0_dig(11);
 
-    // 自瞄调试参数
+    // 鑷瀯璋冭瘯鍙傛暟
     P0_dig << 10, 64, 10, 64, 10, 64, 0.4, 100, 0.1, 0.1, 0.1;
     target_ = Target(armor, t, 4, P0_dig);
     //   }
@@ -322,27 +322,27 @@ bool Tracker::update_target(std::vector<Armor> &armors, std::chrono::steady_cloc
 }
 // bool Tracker::update_target(std::vector<Armor> &armors, std::chrono::steady_clock::time_point t)
 // {
-//     // 1. 预测必须做
+//     // 1. 棰勬祴蹇呴』鍋?
 //     target_.predict(t);
 
 //     if (armors.empty()) return false;
 
-//     // 2. 寻找最佳匹配装甲板
+//     // 2. 瀵绘壘鏈€浣冲尮閰嶈鐢叉澘
 //     Armor* best_armor = nullptr;
-//     float min_dist_sq = 1e10; // 使用距离平方
+//     float min_dist_sq = 1e10; // 浣跨敤璺濈骞虫柟
 //     const cv::Point2f img_center(1440.0f / 2, 1080.0f / 2);
 
 //     for (auto &armor : armors)
 //     {
-//         // 严格匹配 ID
+//         // 涓ユ牸鍖归厤 ID
 //         if (armor.car_num != target_.car_num) continue;
 
-//         // 简单的距离筛选（如果已经是排序过的，第一个匹配的就是最好的，可以直接 break）
-//         // 这里假设 armors 已经在 track 函数里 sort 过了
+//         // 绠€鍗曠殑璺濈绛涢€夛紙濡傛灉宸茬粡鏄帓搴忚繃鐨勶紝绗竴涓尮閰嶇殑灏辨槸鏈€濂界殑锛屽彲浠ョ洿鎺?break锛?
+//         // 杩欓噷鍋囪 armors 宸茬粡鍦?track 鍑芥暟閲?sort 杩囦簡
 //         best_armor = &armor;
 //         break; 
         
-//         // 如果上面没有 sort，则需要在这里遍历找最近的：
+//         // 濡傛灉涓婇潰娌℃湁 sort锛屽垯闇€瑕佸湪杩欓噷閬嶅巻鎵炬渶杩戠殑锛?
 //         /*
 //         float d = distance_sq(armor.center, img_center);
 //         if (d < min_dist_sq) {
@@ -354,11 +354,14 @@ bool Tracker::update_target(std::vector<Armor> &armors, std::chrono::steady_cloc
 
 //     if (!best_armor) return false;
 
-//     // 3. 关键优化：只对【唯一】的最佳装甲板做 PnP 和 Update
-//     // 避免了对所有装甲板做 PnP 的巨大开销
+//     // 3. 鍏抽敭浼樺寲锛氬彧瀵广€愬敮涓€銆戠殑鏈€浣宠鐢叉澘鍋?PnP 鍜?Update
+//     // 閬垮厤浜嗗鎵€鏈夎鐢叉澘鍋?PnP 鐨勫法澶у紑閿€
 //     solver_._solve_pnp(*best_armor);
 //     target_.update(*best_armor);
 
 //     return true;
 // }
 // } // namespace armor_task
+
+} // namespace armor_task
+

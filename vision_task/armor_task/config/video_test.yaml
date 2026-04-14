@@ -1,4 +1,4 @@
 yolo_model_path: /home/nvidia/NJU-algorithm/vision_task/armor_task/models/new.engine
 video_path : /home/nvidia/NJU-algorithm/vision_task/armor_task/assets/camera_record.avi
 config_path : /home/nvidia/NJU-algorithm/vision_task/armor_task/config/camera1.yaml
-bullet_speed : 16.7
+bullet_speed : 22

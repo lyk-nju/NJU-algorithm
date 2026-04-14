@@ -3,6 +3,7 @@
 #include "tasks/aimer.hpp"
 #include "tasks/detector.hpp"
 #include "tasks/pnp_solver.hpp"
+#include "tasks/shooter.hpp"
 #include "tasks/tracker.hpp"
 #include "tools/draw.hpp"
 #include "tools/pharser.hpp"
@@ -23,9 +24,10 @@
 #include <rclcpp/rclcpp.hpp>
 #include <sstream>
 #include <thread>
-#include <yaml-cpp/yaml.h>
 
-//只是框架
+using namespace armor_task;
+
+//鍙槸妗嗘灦
 int main(){
     std::string test_config_path = "../config/deploy_test.yaml";
     TestConfig test_config = load_deploy_test_config(test_config_path);
@@ -41,15 +43,17 @@ int main(){
    
     Tracker tracker(config_path, pnp_solver); 
     Aimer aimer(config_path);
+    Shooter shooter(config_path);
     
 
     cv::Mat camera_matrix = camera_params.first;
     cv::Mat distort_coeffs = camera_params.second;
 
     camera.read(img,t);
-    auto q = cboard.q(t); //读取线程的开启封装到cboard的构造函数里面
+    auto q = cboard.q(t); //璇诲彇绾跨▼鐨勫紑鍚皝瑁呭埌cboard鐨勬瀯閫犲嚱鏁伴噷闈?
 
     solver.set_R_gimbal2world(q);
+    Eigen::Vector3d ypr = tools::eulers(solver.R_gimbal2world(), 2, 1, 0);
     auto armors = yolo.detect(img);
 
     bool enemy_is_red = cboard.set_enemy();
@@ -58,7 +62,9 @@ int main(){
     const io::JudgerData jd= cboard.judger;
     double bullet_speed = jd.bullet_speed;
     io::Vision2Cboard cmd2cboard = aimer.aim(targets, t, bullet_speed);
+    cmd2cboard.shoot = shooter.shoot(cmd2cboard,aimer,targets,ypr);
 
     cboard.send(cmd2cboard);
     
 }
+

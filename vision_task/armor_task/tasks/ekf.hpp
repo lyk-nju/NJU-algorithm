@@ -6,6 +6,8 @@
 #include <functional>
 #include <map>
 
+namespace armor_task
+{
 
 class Ekf
 {
@@ -51,5 +53,6 @@ private:
   int total_count_ = 0;
 };
 
+}  // namespace armor_task
 
 #endif  // TOOLS__EXTENDED_KALMAN_FILTER_HPP
