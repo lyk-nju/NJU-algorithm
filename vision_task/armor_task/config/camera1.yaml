@@ -37,6 +37,7 @@ decision_speed_: 20.0 #低速/高速切换阈值，单位为m/s
 bullet_speed: 22.0
 
 ###---海康相机参数---###
+camera_name: hik
 exposure_time: 1000
 gain: 16.9
 adc_bit_depth: 8
