@@ -33,7 +33,17 @@ io::Vision2Cboard Aimer::aim(std::list<Target> targets, std::chrono::steady_cloc
 // 重载版本：使用下位机传入的子弹速度
 io::Vision2Cboard Aimer::aim(std::list<Target> targets, std::chrono::steady_clock::time_point timestamp, double bullet_speed, bool to_now)
 {
-    if (targets.empty()) return {false, false, 0, 0};
+    auto make_cmd = [](bool valid, bool shoot, float yaw, float pitch) -> io::Vision2Cboard
+    {
+        io::Vision2Cboard cmd{};
+        cmd.gimbal_cmd_.valid = valid;
+        cmd.gimbal_cmd_.shoot = shoot;
+        cmd.gimbal_cmd_.yaw = yaw;
+        cmd.gimbal_cmd_.pitch = pitch;
+        return cmd;
+    };
+
+    if (targets.empty()) return make_cmd(false, false, 0.0f, 0.0f);
     auto target = targets.front();
 
     // 按角速度选择延时参数
@@ -58,7 +68,7 @@ io::Vision2Cboard Aimer::aim(std::list<Target> targets, std::chrono::steady_cloc
     debug_aim_point = aim_point0;
     if (!aim_point0.valid)
     {
-        return {false, false, 0, 0};
+        return make_cmd(false, false, 0.0f, 0.0f);
     }
 
     const Eigen::Vector3d xyz0 = aim_point0.xyza.head(3);
@@ -67,7 +77,7 @@ io::Vision2Cboard Aimer::aim(std::list<Target> targets, std::chrono::steady_cloc
     if (trajectory0.unsolvable)
     {
         debug_aim_point.valid = false;
-        return {false, false, 0, 0};
+        return make_cmd(false, false, 0.0f, 0.0f);
     }
 
     // 迭代飞行时间直到收敛
@@ -84,7 +94,7 @@ io::Vision2Cboard Aimer::aim(std::list<Target> targets, std::chrono::steady_cloc
         debug_aim_point = aim_point;
         if (!aim_point.valid)
         {
-            return {false, false, 0, 0};
+            return make_cmd(false, false, 0.0f, 0.0f);
         }
 
         const Eigen::Vector3d xyz = aim_point.xyza.head(3);
@@ -94,7 +104,7 @@ io::Vision2Cboard Aimer::aim(std::list<Target> targets, std::chrono::steady_cloc
         if (current_traj.unsolvable)
         {
             debug_aim_point.valid = false;
-            return {false, false, 0, 0};
+            return make_cmd(false, false, 0.0f, 0.0f);
         }
 
         if (std::abs(current_traj.fly_time - prev_fly_time) < 0.001) break;
@@ -104,7 +114,7 @@ io::Vision2Cboard Aimer::aim(std::list<Target> targets, std::chrono::steady_cloc
     const Eigen::Vector3d final_xyz = debug_aim_point.xyza.head(3);
     const double yaw = std::atan2(final_xyz.y(), final_xyz.x()) + yaw_offset_;
     const double pitch = -(current_traj.pitch + pitch_offset_); // 世界坐标系下向上为负 pitch
-    return {true, false, static_cast<float>(yaw), static_cast<float>(pitch)};
+    return make_cmd(true, false, static_cast<float>(yaw), static_cast<float>(pitch));
 }
 
 AimPoint Aimer::choose_aim_point(const Target &target)

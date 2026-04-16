@@ -5,7 +5,8 @@
 
 namespace armor_task
 {
-Shooter::Shooter(const std::string & config_path) : last_command_{false, false, 0, 0}
+Shooter::Shooter(const std::string & config_path)
+  : last_command_{io::gimbal_command{false, false, 0.0f, 0.0f}, io::base_command{}}
 {
   auto yaml = YAML::LoadFile(config_path);
   first_tolerance_ =
@@ -19,7 +20,7 @@ bool Shooter::shoot(
   const io::Vision2Cboard & command, const Aimer & aimer,
   const std::vector<Target> & targets, const Eigen::Vector3d & gimbal_ypr)
 {
-  if (!command.valid || targets.empty() || !aimer.debug_aim_point.valid) {
+  if (!command.gimbal_cmd_.valid || targets.empty() || !aimer.debug_aim_point.valid) {
     has_last_command_ = false;
     return false;
   }
@@ -36,8 +37,9 @@ bool Shooter::shoot(
     return false;
   }
 
-  const bool command_stable = std::abs(last_command_.yaw - command.yaw) < tolerance * 2.0;
-  const bool gimbal_close = std::abs(gimbal_ypr[0] - command.yaw) < tolerance;
+  const bool command_stable =
+    std::abs(last_command_.gimbal_cmd_.yaw - command.gimbal_cmd_.yaw) < tolerance * 2.0;
+  const bool gimbal_close = std::abs(gimbal_ypr[0] - command.gimbal_cmd_.yaw) < tolerance;
 
   last_command_ = command;
   return command_stable && gimbal_close;

@@ -29,10 +29,10 @@ std::string encode(const Vision2Cboard &data)
     std::ostringstream ss;
     ss.setf(std::ios::fixed);
     ss << std::setprecision(6)
-       << (data.valid ? 1 : 0) << ","
-       << (data.shoot ? 1 : 0) << ","
-       << data.yaw << ","
-       << data.pitch << ","
+       << (data.gimbal_cmd_.valid ? 1 : 0) << ","
+       << (data.gimbal_cmd_.shoot ? 1 : 0) << ","
+       << data.gimbal_cmd_.yaw << ","
+       << data.gimbal_cmd_.pitch << ","
        << data.base_cmd_.v_x << ","
        << data.base_cmd_.v_y << ","
        << data.base_cmd_.w_yaw << "\n";
@@ -59,21 +59,15 @@ bool decode(const std::string &line, Cboard2Vision &out)
         &self_id,
         &bullet_speed);
 
-    if (count < 7)
+    // sscanf 期望解析 11 个字段
+    if (count < 11)
     {
         return false;
     }
 
-    out = Cboard2Vision{
-        decode_mode(mode),
-        w,
-        x,
-        y,
-        z,
-        yaw,
-        pitch,
-        JudgerData{game_time, self_hp, self_id, bullet_speed},
-    };
+    out.mode_ = decode_mode(mode);
+    out.gimbal_data_ = GimbalData{w, x, y, z, static_cast<float>(yaw), static_cast<float>(pitch)};
+    out.judge_ = JudgerData{game_time, self_hp, self_id, bullet_speed};
     return true;
 }
 } // namespace unpack

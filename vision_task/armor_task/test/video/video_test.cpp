@@ -126,7 +126,9 @@ int main(int argc, char *argv[])
             const double track_ms = std::chrono::duration<double, std::milli>(track_end - track_begin).count();
 
             const auto aim_begin = std::chrono::steady_clock::now();
-            io::Vision2Cboard cmd2cboard{false, false, 0.0, 0.0, {0.0f, 0.0f, 0.0f}};
+            io::Vision2Cboard cmd2cboard{
+                io::gimbal_command{false, false, 0.0f, 0.0f},
+                io::base_command{0.0f, 0.0f, 0.0f}};
             if (!targets.empty())
             {
                 std::list<Target> target_list(targets.begin(), targets.end());
@@ -135,7 +137,7 @@ int main(int argc, char *argv[])
             const double aim_ms = std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - aim_begin).count();
 
             // video_test默认可以开火
-            cmd2cboard.shoot = true;
+            cmd2cboard.gimbal_cmd_.shoot = true;
 
             // 1) detector: detected armors
             for (const auto &armor : detected_armors)
@@ -190,8 +192,9 @@ int main(int argc, char *argv[])
             }
 
             std::cout << std::fixed << std::setprecision(2) << "frame=" << frame_index << " fps=" << fps << " detect_ms=" << detect_ms << " track_ms=" << track_ms << " aim_ms=" << aim_ms
-                      << " tracker_state=" << tracker.state() << " targets=" << targets.size() << " valid=" << cmd2cboard.valid << " shoot=" << cmd2cboard.shoot << " yaw=" << cmd2cboard.yaw
-                      << " pitch=" << cmd2cboard.pitch << std::endl;
+                      << " tracker_state=" << tracker.state() << " targets=" << targets.size()
+                      << " valid=" << cmd2cboard.gimbal_cmd_.valid << " shoot=" << cmd2cboard.gimbal_cmd_.shoot
+                      << " yaw=" << cmd2cboard.gimbal_cmd_.yaw << " pitch=" << cmd2cboard.gimbal_cmd_.pitch << std::endl;
         }
 
         cap.release();

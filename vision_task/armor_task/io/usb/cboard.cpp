@@ -54,15 +54,6 @@ JudgerData Cboard::judger() const
     return judge_;
 }
 
-bool Cboard::set_enemy(){
-    const JudgerData judger_data = this->judger();
-    if(judger_data.self_id > 11)
-    {
-        return true; // 红色
-    }
-    return false; // 蓝色
-}
-
 Eigen::Quaterniond Cboard::q(std::chrono::steady_clock::time_point t)
 {
     if (data_queue_.empty())
@@ -198,7 +189,7 @@ void Cboard::read_thread()
             judge_ = rx_data_.judge_;
         }
         data_queue_.push(std::make_tuple(
-            Eigen::Quaterniond(rx_data_.w, rx_data_.x, rx_data_.y, rx_data_.z), now));
+            Eigen::Quaterniond(rx_data_.gimbal_data_.w, rx_data_.gimbal_data_.x, rx_data_.gimbal_data_.y, rx_data_.gimbal_data_.z), now));
     }
 }
 

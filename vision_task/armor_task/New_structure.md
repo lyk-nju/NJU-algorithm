@@ -16,11 +16,9 @@ vision_task/
 │   │   ├── usbcamera/
 │   │   └── hiki/
 │   ├── serial/
-│   └── usb/
-│       └── ros2/
-├── dataframe/
-│   ├── base_cmd.hpp
-│   └── sentry_data.hpp
+│   ├── usb/
+|   ├── dataframe/
+│   └── ros2/
 ├── models/
 ├── tasks/
 │   ├── auto_aim/
@@ -66,10 +64,11 @@ camera/：支持驱动 USB 相机及海康（hiki）相机。
 
 serial/ & usb/：处理串口与 USB 通信，其中包含针对 ROS 2 的封装。
 
-数据定义 (dataframe/)
-该模块包含第三方串口通信库。
+数据定义（io/dataframe/）
+该模块用于统一“所有数据结构定义（struct）”以及“跨接口转换（transfer）”：
 
-定义了通信协议的数据结构，包括基础命令 base_cmd.hpp 和哨兵专用数据 sentry_data.hpp。
+- `struct.hpp`：通信协议与上层决策所需的基础数据结构（命令、反馈、裁判系统等）。
+- `transfer.hpp`：完成不同接口（例如 USB 串口与 ROS2 消息）之间的数据转换方法；不依赖具体实现类（如 `Cboard`/`ROS2Manager`）。
 
 核心任务 (tasks/)
 auto_aim/：包含基于第三方库封装的通信层 aimer.cpp/hpp。核心逻辑涵盖目标检测（detector）、追踪（tracker）、位姿解算（pnp_solver）、卡尔曼滤波（ekf）及弹道轨迹计算（trajectory）。

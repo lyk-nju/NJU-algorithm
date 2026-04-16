@@ -1,6 +1,6 @@
 #pragma once
 
-#include "../dataframe/base_cmd.hpp"
+#include "../dataframe/struct.hpp"
 #include "../thread_safe_queue.hpp"
 #include <Eigen/Geometry>
 #include <atomic>
@@ -23,7 +23,6 @@ public:
     PlayerMode mode() const;
     JudgerData judger() const;
     Eigen::Quaterniond q(std::chrono::steady_clock::time_point t);
-    bool set_enemy(JudgerData judger_data);
 
     void send(const io::Vision2Cboard &vision2cboard);
 

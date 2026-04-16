@@ -1,7 +1,7 @@
 #ifndef AUTO_AIM__SHOOTER_HPP
 #define AUTO_AIM__SHOOTER_HPP
 
-#include "../io/dataframe/base_cmd.hpp"
+#include "../io/dataframe/struct.hpp"
 #include <Eigen/Dense>
 #include <list>
 #include <string>

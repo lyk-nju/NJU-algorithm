@@ -89,6 +89,7 @@ endif()
 set(SOURCES
     tasks/postprocess.cu
     tasks/auto_aim_system.cpp
+    tasks/imu_history.cpp
     tasks/detector.cpp
     tasks/pnp_solver.cpp
     tasks/tracker.cpp
@@ -123,6 +124,7 @@ set(VIDEO_TEST_SOURCES
 
 set(SOURCES_NO_VISUALIZER
     tasks/auto_aim_system.cpp
+    tasks/imu_history.cpp
     tasks/detector.cpp
     tasks/pnp_solver.cpp
     tasks/tracker.cpp
@@ -140,7 +142,7 @@ set(SOURCES_NO_VISUALIZER
 )
 
 set(ROS2_SOURCES
-    io/ros2_manager.cpp
+    io/ros2/ros2_manager.cpp
 )
 
 

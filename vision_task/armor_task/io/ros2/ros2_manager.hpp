@@ -9,7 +9,9 @@
 #include <rclcpp/rclcpp.hpp>
 #include <sensor_msgs/msg/image.hpp>
 #include <std_msgs/msg/float32_multi_array.hpp>
-#include "serial_manager.hpp"
+#include <atomic>
+#include <thread>
+#include "../dataframe/struct.hpp"
 
 class ROS2Manager : public rclcpp::Node
 {
@@ -23,6 +25,9 @@ class ROS2Manager : public rclcpp::Node
     };
 
     ROS2Manager();
+    ~ROS2Manager();
+    void startSpin();
+    void stopSpin();
 
     // 从图像订阅中获取当前图像帧（深拷贝）和时间戳
     bool get_img(cv::Mat &img);
@@ -34,9 +39,6 @@ class ROS2Manager : public rclcpp::Node
 
 
   private:
-    int save_count_ = 0; // 记录已保存的图像数量
-    const int max_save_count_ = 10; // 最大保存数量
-    const std::string save_path_ = "/home/nvidia/NJU-algorithm/vision_task/hiki_ros2/image/";
     // 图像订阅回调
     void image_callback(const sensor_msgs::msg::Image::SharedPtr msg);
     void cmd_vel_callback(const geometry_msgs::msg::Twist::SharedPtr msg);
@@ -60,4 +62,8 @@ class ROS2Manager : public rclcpp::Node
     std::mutex aimer_data_mutex_;
     io::AimerData latest_aimer_data_;
     bool has_aimer_data_ = false;
+
+    // 模块内部管理 ROS2 spin 线程（与 io/usb 的线程管理风格一致）
+    std::atomic<bool> spinning_{false};
+    std::thread spin_thread_;
 };

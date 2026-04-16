@@ -1,6 +1,6 @@
 #pragma once
 
-#include "../dataframe/base_cmd.hpp"
+#include "../dataframe/struct.hpp"
 #include <string>
 
 namespace io
