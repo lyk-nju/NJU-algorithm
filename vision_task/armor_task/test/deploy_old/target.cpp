@@ -26,7 +26,7 @@ target.cpp：
 #include "../../tasks/pnp_solver.hpp"
 #include "../../tasks/tracker.hpp"
 #include "../../tools/draw.hpp"
-#include "../../tools/pharser.hpp"
+#include "../../tools/parser.hpp"
 #include <atomic>
 #include <chrono>
 #include <fstream>

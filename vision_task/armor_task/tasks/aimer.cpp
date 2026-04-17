@@ -16,7 +16,11 @@ Aimer::Aimer(const std::string &config_path)
     auto yaml = YAML::LoadFile(config_path);
     yaw_offset_ = yaml["yaw_offset"].as<double>() / 57.3;       // 角度转弧度
     pitch_offset_ = yaml["pitch_offset"].as<double>() / 57.3;   // 角度转弧度
-    comming_angle_ = yaml["comming_angle"].as<double>() / 57.3; // 角度转弧度
+    // 兼容旧配置文件：优先读 coming_angle，回退到历史拼写 comming_angle
+    if (yaml["coming_angle"])
+        coming_angle_ = yaml["coming_angle"].as<double>() / 57.3; // 角度转弧度
+    else
+        coming_angle_ = yaml["comming_angle"].as<double>() / 57.3; // 角度转弧度
     leaving_angle_ = yaml["leaving_angle"].as<double>() / 57.3; // 角度转弧度
     high_speed_delay_time_ = yaml["high_speed_delay_time"].as<double>();
     low_speed_delay_time_ = yaml["low_speed_delay_time"].as<double>();
@@ -165,7 +169,7 @@ AimPoint Aimer::choose_aim_point(const Target &target)
         return {true, armor_xyza_list[id_list[0]]};
     }
 
-    const double coming_angle = comming_angle_;
+    const double coming_angle = coming_angle_;
     const double leaving_angle = leaving_angle_;
 
     // 小陀螺模式：优先选择正在进入可打击区域的装甲板

@@ -1,5 +1,4 @@
-#ifndef AUTO_AIM__TARGET_HPP
-#define AUTO_AIM__TARGET_HPP
+#pragma once
 
 #include "../include/armor.hpp"
 #include "ekf.hpp"
@@ -35,7 +34,8 @@ class Target
 
     bool diverged() const;
 
-    bool convergened();
+    // 注意：首次满足收敛条件时会缓存 is_converged_ = true，因此非 const。
+    bool has_converged();
 
     bool isinit = true;
 
@@ -57,5 +57,3 @@ class Target
 };
 
 } // namespace armor_task
-
-#endif // AUTO_AIM__TARGET_HPP

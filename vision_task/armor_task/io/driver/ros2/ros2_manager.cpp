@@ -1,26 +1,29 @@
 #include "ros2_manager.hpp"
-#include "detector.hpp"
-#include "pnp_solver.hpp"
-#include "tracker.hpp"
 
-ROS2Manager::ROS2Manager() : Node("ros2_manager")
+ROS2Manager::ROS2Manager(bool subscribe_image) : Node("ros2_manager")
 {
-    image_sub_ = this->create_subscription<sensor_msgs::msg::Image>(
-        "/image_raw",
-        rclcpp::SensorDataQoS().keep_last(1),
-        std::bind(&ROS2Manager::image_callback, this, std::placeholders::_1));
+    if (subscribe_image)
+    {
+        image_sub_ = this->create_subscription<sensor_msgs::msg::Image>(
+            "/image_raw",
+            rclcpp::SensorDataQoS().keep_last(1),
+            std::bind(&ROS2Manager::image_callback, this, std::placeholders::_1));
+    }
 
     cmd_vel_sub_ = this->create_subscription<geometry_msgs::msg::Twist>(
         "/cmd_vel",
         rclcpp::QoS(10),
         std::bind(&ROS2Manager::cmd_vel_callback, this, std::placeholders::_1));
 
-    // armor_pub_ = this->create_publisher<armor_interfaces::msg::ArmorArray>("/armor/prediction", 10);
-
-    RCLCPP_INFO(this->get_logger(), "ROS2Manager initialized.");
+    RCLCPP_INFO(
+        this->get_logger(),
+        "ROS2Manager initialized (subscribe_image=%s).",
+        subscribe_image ? "true" : "false");
 
     autoaim_pub_ = this->create_publisher<std_msgs::msg::Float32MultiArray>("/autoaim_data", 10);
-    autoaim_timer_ = this->create_wall_timer(std::chrono::milliseconds(100), std::bind(&ROS2Manager::timer_callback, this));
+    autoaim_timer_ = this->create_wall_timer(
+        std::chrono::milliseconds(100),
+        std::bind(&ROS2Manager::timer_callback, this));
 }
 
 ROS2Manager::~ROS2Manager()

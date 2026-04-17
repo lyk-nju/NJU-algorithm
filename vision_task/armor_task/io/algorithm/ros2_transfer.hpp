@@ -1,13 +1,16 @@
 #pragma once
-#include "struct.hpp"
+
+#include "../structs/judger.hpp"
+#include "../structs/protocol.hpp"
 
 #include <geometry_msgs/msg/twist.hpp>
 
-// 这里仅做“不同接口之间的数据转换”，不依赖 usb/ros2 的具体实现类（例如 Cboard/ROS2Manager）。
+// ROS2 消息 <-> io::structs 之间的纯转换函数。
+// 把 ROS2 依赖隔离到算法层的这一个文件里，structs/ 层保持零依赖。
 namespace io::transfer
 {
 
-// ---------- ROS2 数据 -> dataframe ----------
+// ROS2 消息 -> 内部结构体
 inline base_command from_cmd_vel(const geometry_msgs::msg::Twist &twist)
 {
     base_command cmd{};
@@ -17,7 +20,7 @@ inline base_command from_cmd_vel(const geometry_msgs::msg::Twist &twist)
     return cmd;
 }
 
-// ---------- dataframe -> 决策/上层数据 ----------
+// 内部结构体 -> 决策/上层数据
 inline AimerData from_vis_dec(bool cmd_valid, const JudgerData &judger_data)
 {
     AimerData out{};
@@ -27,16 +30,10 @@ inline AimerData from_vis_dec(bool cmd_valid, const JudgerData &judger_data)
     return out;
 }
 
-// ---------- dataframe -> 自身颜色 ----------
-// 返回值：true 表示“自身为红方”，false 表示“自身为蓝方”。
+// 由 judger 上报的 self_id 推算自身颜色（true = 红方）
 inline bool self_is_red_from_id(const io::JudgerData &judger_data)
 {
-    if(judger_data.self_id <= 11)
-    {
-        return true; // 红色
-    }
-    return false; // 蓝色
+    return judger_data.self_id <= 11;
 }
-
 
 } // namespace io::transfer

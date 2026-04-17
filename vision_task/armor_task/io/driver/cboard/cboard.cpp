@@ -1,6 +1,7 @@
 #include "cboard.hpp"
-#include "unpack.hpp"
+#include "../../algorithm/codec.hpp"
 
+#include <algorithm>
 #include <chrono>
 #include <iostream>
 #include <string>
@@ -24,7 +25,7 @@ Cboard::Cboard(const std::string &config_path)
         baudrate_ = cfg["baudrate"].as<uint32_t>();
     }
 
-    //cboard对象构造即开启read_thread，无需main中手动开启
+    // Cboard 构造即开启 read_thread，无需 main 中手动开启
     configure_and_open();
     thread_ = std::thread(&Cboard::read_thread, this);
 }
@@ -54,61 +55,60 @@ JudgerData Cboard::judger() const
     return judge_;
 }
 
-Eigen::Quaterniond Cboard::q(std::chrono::steady_clock::time_point t)
+Eigen::Quaterniond Cboard::gimbal_quat_at(std::chrono::steady_clock::time_point t) const
 {
-    if (data_queue_.empty())
+    std::lock_guard<std::mutex> lock(quat_mutex_);
+    if (quat_buffer_.empty())
     {
         return Eigen::Quaterniond::Identity();
     }
-    TimedQuaternion a = data_queue_.pop();
 
-    if (data_queue_.empty())
+    // 越界 clamp：避免外推产生发散
+    if (t <= quat_buffer_.front().time) return quat_buffer_.front().quat;
+    if (t >= quat_buffer_.back().time) return quat_buffer_.back().quat;
+
+    // 二分查找第一个 time >= t 的采样
+    auto it_next = std::lower_bound(
+        quat_buffer_.begin(), quat_buffer_.end(), t,
+        [](const TimedQuat &s, const std::chrono::steady_clock::time_point &tt) {
+            return s.time < tt;
+        });
+    auto it_prev = std::prev(it_next);
+
+    const double dt = std::chrono::duration<double>(it_next->time - it_prev->time).count();
+    if (dt <= 0.0)
     {
-        return std::get<0>(a);
+        return it_prev->quat;
     }
-    TimedQuaternion b = data_queue_.front();
-
-    while (true)
-    {
-        const auto &[q_a, t_a] = a;
-        const auto &[q_b, t_b] = b;
-
-        if (t <= t_a) return q_a;
-        if (t <= t_b)
-        {
-            const double k =
-                std::chrono::duration<double>(t - t_a).count() /
-                std::chrono::duration<double>(t_b - t_a).count();
-            return q_a.slerp(k, q_b).normalized();
-        }
-
-        if (data_queue_.empty())
-        {
-            return q_b;
-        }
-        a = data_queue_.pop();
-        if (data_queue_.empty())
-        {
-            return q_b;
-        }
-        b = data_queue_.front();
-    }
+    const double k = std::chrono::duration<double>(t - it_prev->time).count() / dt;
+    return it_prev->quat.slerp(k, it_next->quat).normalized();
 }
 
-//向下位机发送不另开线程，解算完了再发送
+// 向下位机发送不另开线程，解算完了再发送
 void Cboard::send(const io::Vision2Cboard &vision2cboard)
 {
     if (!serial_.isOpen()) reconnect();
 
     try
     {
-        serial_.write(unpack::encode(vision2cboard));
+        serial_.write(io::codec::encode(vision2cboard));
     }
     catch (const std::exception &e)
     {
         std::cerr << "[Cboard] Write failed: " << e.what() << std::endl;
         reconnect();
     }
+}
+
+bool Cboard::is_connected() const
+{
+    return serial_.isOpen();
+}
+
+bool Cboard::has_quat_data() const
+{
+    std::lock_guard<std::mutex> lock(quat_mutex_);
+    return !quat_buffer_.empty();
 }
 
 bool Cboard::read(uint8_t *buffer, std::size_t size)
@@ -175,7 +175,7 @@ void Cboard::read_thread()
             continue;
         }
 
-        if (!unpack::decode(line, rx_data_))
+        if (!io::codec::decode(line, rx_data_))
         {
             ++error_count;
             continue;
@@ -188,8 +188,20 @@ void Cboard::read_thread()
             mode_ = rx_data_.mode_;
             judge_ = rx_data_.judge_;
         }
-        data_queue_.push(std::make_tuple(
-            Eigen::Quaterniond(rx_data_.gimbal_data_.w, rx_data_.gimbal_data_.x, rx_data_.gimbal_data_.y, rx_data_.gimbal_data_.z), now));
+        {
+            std::lock_guard<std::mutex> lock(quat_mutex_);
+            quat_buffer_.push_back({
+                now,
+                Eigen::Quaterniond(
+                    rx_data_.gimbal_data_.w,
+                    rx_data_.gimbal_data_.x,
+                    rx_data_.gimbal_data_.y,
+                    rx_data_.gimbal_data_.z)});
+            if (quat_buffer_.size() > kQuatBufferSize)
+            {
+                quat_buffer_.pop_front();
+            }
+        }
     }
 }
 
@@ -199,10 +211,13 @@ void Cboard::reconnect()
     {
         if (serial_.isOpen())
             serial_.close();
-            
+
         if (configure_and_open())
         {
-            data_queue_.clear();
+            {
+                std::lock_guard<std::mutex> lock(quat_mutex_);
+                quat_buffer_.clear();
+            }
             std::cerr << "[Cboard] Reconnected to " << port_ << std::endl;
             return;
         }

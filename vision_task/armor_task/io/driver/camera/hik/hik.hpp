@@ -1,7 +1,7 @@
 #pragma once
 
 #include "../camera_base.hpp"
-#include "../../thread_safe_queue.hpp"
+#include "../../../algorithm/thread_safe_queue.hpp"
 #include "include/MvCameraControl.h"
 
 #include <atomic>

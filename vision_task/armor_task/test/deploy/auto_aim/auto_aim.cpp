@@ -1,7 +1,10 @@
 #include "tasks/auto_aim_system.hpp"
-#include "tools/pharser.hpp"
+#include "tools/parser.hpp"
 
 #include <rclcpp/rclcpp.hpp>
+
+#include <iostream>
+#include <string>
 
 using namespace armor_task;
 
@@ -9,13 +12,21 @@ int main(int argc, char *argv[])
 {
     rclcpp::init(argc, argv);
 
-    std::string test_config_path = "../config/deploy_test.yaml";
-    bool use_direct_camera = false;
+    const std::string test_config_path =
+        (argc > 1) ? argv[1] : "../config/deploy_test.yaml";
 
-    const TestConfig test_config = load_deploy_test_config(test_config_path);
-    AutoAimSystem system(test_config.yolo_model_path,test_config.config_path,test_config.bullet_speed);
-    system.enableDirectCameraInput(use_direct_camera);
+    const TestConfig cfg = load_deploy_test_config(test_config_path);
 
+    const ImageSourceType source_type =
+        (cfg.image_source == "camera")
+            ? ImageSourceType::DIRECT_CAMERA
+            : ImageSourceType::ROS2_TOPIC;
+
+    std::cout << "[auto_aim] image_source = "
+              << (source_type == ImageSourceType::DIRECT_CAMERA ? "camera (USB direct)" : "ros2 (/image_raw)")
+              << std::endl;
+
+    AutoAimSystem system(cfg.yolo_model_path, cfg.config_path, cfg.bullet_speed, source_type);
     system.start();
     system.run();
     system.stop();
@@ -23,4 +34,3 @@ int main(int argc, char *argv[])
     rclcpp::shutdown();
     return 0;
 }
-

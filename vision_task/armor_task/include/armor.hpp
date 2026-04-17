@@ -1,7 +1,5 @@
-#ifndef ARMOR_HPP
-#define ARMOR_HPP
-
 #pragma once
+
 #include <Eigen/Dense>
 #include <opencv2/opencv.hpp>
 #include <string>
@@ -53,7 +51,7 @@ struct Armor
     Eigen::Vector3d ypr_in_gimbal = Eigen::Vector3d::Zero(); // 装甲板云台坐标系欧拉角
     Eigen::Vector3d ypr_in_world = Eigen::Vector3d::Zero();  // 装甲板世界坐标系欧拉角
     Eigen::Vector3d ypd_in_world = Eigen::Vector3d::Zero();  // 球坐标
-    bool islarge = false;                                    // 是否为大装甲板
+    bool is_large = false;                                   // 是否为大装甲板
 
     Armor() = default;
     Armor(const LightBar &left, const LightBar &right, int detect_id, cv::Rect box) : box(box), detect_id(detect_id), left_lightbar(left), right_lightbar(right)
@@ -64,5 +62,3 @@ struct Armor
 };
 
 using ArmorArray = std::vector<Armor>;
-
-#endif

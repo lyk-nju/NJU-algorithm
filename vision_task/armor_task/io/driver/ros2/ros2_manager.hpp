@@ -11,7 +11,7 @@
 #include <std_msgs/msg/float32_multi_array.hpp>
 #include <atomic>
 #include <thread>
-#include "../dataframe/struct.hpp"
+#include "../../structs/structs.hpp"
 
 class ROS2Manager : public rclcpp::Node
 {
@@ -24,7 +24,12 @@ class ROS2Manager : public rclcpp::Node
         uint64_t id = 0;
     };
 
-    ROS2Manager();
+    /**
+     * @param subscribe_image 是否订阅 /image_raw。
+     *   - true  : ROS2 话题模式（从外部节点接收图像）。
+     *   - false : 直连相机模式（图像由 io::Camera 直接提供，不需要订阅）。
+     */
+    explicit ROS2Manager(bool subscribe_image);
     ~ROS2Manager();
     void startSpin();
     void stopSpin();

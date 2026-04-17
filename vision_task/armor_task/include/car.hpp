@@ -1,5 +1,4 @@
-#ifndef CAR_HPP
-#define CAR_HPP
+#pragma once
 
 #include "armor.hpp"
 
@@ -17,5 +16,3 @@ struct Robot
     Robot(const Armor &a) : armor(a), omega(0.0f), vx(0.0f), ax(0.0f), vz(0.0f), az(0.0f) {}
     Robot(const Armor &a, float w = 0.0f, float v_x = 0.0f, float v_z = 0.0f) : armor(a), omega(w), vx(v_x), ax(0.0f), vz(v_z), az(0.0f) {}
 };
-
-#endif // CAR_HPP

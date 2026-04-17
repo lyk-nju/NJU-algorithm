@@ -1,5 +1,4 @@
-#ifndef STRUCTURES_HPP
-#define STRUCTURES_HPP
+#pragma once
 
 // 通用结构体头文件引用
 #include "armor.hpp"
@@ -7,4 +6,3 @@
 
 // 可以在这里添加其他通用的结构体定义或类型别名
 
-#endif // STRUCTURES_HPP

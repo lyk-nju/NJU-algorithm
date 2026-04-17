@@ -1,4 +1,4 @@
-#include "io/camera/camera_base.hpp"
+#include "io/driver/camera/camera_base.hpp"
 
 #include <atomic>
 #include <chrono>

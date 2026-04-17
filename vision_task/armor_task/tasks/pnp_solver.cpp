@@ -51,15 +51,15 @@ PnpSolver::PnpSolver(const cv::Mat &camera_matrix, const cv::Mat &distort_coeffs
     t_camera2gimbal_ = Eigen::Vector3d::Zero();
 }
 
-bool PnpSolver::Islarge(Armor &armor)
+bool PnpSolver::is_large(Armor &armor)
 {
     if (armor.car_num == 1)
     {
-        armor.islarge = true;
+        armor.is_large = true;
         return true;
     }
 
-    armor.islarge = false;
+    armor.is_large = false;
     return false;
 }
 
@@ -69,14 +69,47 @@ void PnpSolver::set_R_gimbal2world(const Eigen::Quaterniond &q)
     R_gimbal2world_ = R_gimbal2imubody_.transpose() * R_imubody2imuabs * R_gimbal2imubody_;
 }
 
-bool PnpSolver::_solve_pnp(Armor &armor)
+void PnpSolver::set_camera(const io::CameraInfo &info)
+{
+    // Fast-path：上次见过同一个 CameraInfo（id + 对象地址都相同），不做任何复制。
+    // 单相机场景下 AutoAimSystem::camera_info_ 是稳定的成员变量，每帧都命中此分支。
+    if (last_info_ptr_ == &info && last_camera_id_ == info.camera_id && last_camera_id_ != -1)
+    {
+        return;
+    }
+
+    // 切换相机 / 首次调用 / 换了新的 CameraInfo 对象：clone cv::Mat 以持有独立存储，
+    // 防御外部 CameraInfo 被销毁或被原地改写导致的悬空/数据撕裂。
+    // Eigen 矩阵是 value type，直接赋值即拷贝。
+    camera_matrix_ = info.camera_matrix.clone();
+    distort_coeffs_ = info.distort_coeffs.clone();
+    R_camera2gimbal_ = info.R_camera2gimbal;
+    t_camera2gimbal_ = info.t_camera2gimbal;
+
+    last_camera_id_ = info.camera_id;
+    last_info_ptr_ = &info;
+}
+
+io::CameraInfo PnpSolver::as_camera_info(int camera_id, std::string name) const
+{
+    io::CameraInfo info;
+    info.camera_id = camera_id;
+    info.name = std::move(name);
+    info.camera_matrix = camera_matrix_.clone();
+    info.distort_coeffs = distort_coeffs_.clone();
+    info.R_camera2gimbal = R_camera2gimbal_;
+    info.t_camera2gimbal = t_camera2gimbal_;
+    return info;
+}
+
+bool PnpSolver::solve_pnp(Armor &armor)
 {
     if (armor.left_lightbar.center == cv::Point2f(0, 0) || armor.right_lightbar.center == cv::Point2f(0, 0))
     {
         return false;
     }
 
-    const auto &object_points = Islarge(armor) ? BIG_ARMOR_POINTS : SMALL_ARMOR_POINTS;
+    const auto &object_points = is_large(armor) ? BIG_ARMOR_POINTS : SMALL_ARMOR_POINTS;
     armor.corners = {
         armor.left_lightbar.top,
         armor.right_lightbar.top,
@@ -121,7 +154,7 @@ int PnpSolver::solveArmorArray(ArmorArray &armor_array)
     int success_count = 0;
     for (size_t i = 0; i < armor_array.size(); ++i)
     {
-        if (_solve_pnp(armor_array[i]))
+        if (solve_pnp(armor_array[i]))
         {
             success_count++;
         }
@@ -229,11 +262,11 @@ double PnpSolver::SJTU_cost(const std::vector<cv::Point2f> &cv_refs, const std::
 
 double PnpSolver::armor_reprojection_error(const Armor &armor, double yaw, const double &inclined) const
 {
-    auto image_points = reproject_armor(armor.p_world, yaw, armor.islarge);
+    auto image_points = reproject_armor(armor.p_world, yaw, armor.is_large);
     return SJTU_cost(image_points, armor.corners, inclined);
 }
 
-std::vector<cv::Point2f> PnpSolver::reproject_armor(const Eigen::Vector3d &p_world, double yaw, bool islarge) const
+std::vector<cv::Point2f> PnpSolver::reproject_armor(const Eigen::Vector3d &p_world, double yaw, bool is_large) const
 {
     auto sin_yaw = std::sin(yaw);
     auto cos_yaw = std::cos(yaw);
@@ -261,7 +294,7 @@ std::vector<cv::Point2f> PnpSolver::reproject_armor(const Eigen::Vector3d &p_wor
     cv::Vec3d tvec(t_armor2camera[0], t_armor2camera[1], t_armor2camera[2]);
 
     std::vector<cv::Point2f> image_points;
-    const auto &object_points = islarge ? BIG_ARMOR_POINTS : SMALL_ARMOR_POINTS;
+    const auto &object_points = is_large ? BIG_ARMOR_POINTS : SMALL_ARMOR_POINTS;
     cv::projectPoints(object_points, rvec, tvec, camera_matrix_, distort_coeffs_, image_points);
     return image_points;
 }
@@ -279,13 +312,13 @@ std::vector<std::vector<cv::Point2f>> PnpSolver::reproject_armor(const Target &t
     return all_corners;
 }
 
-std::vector<cv::Point2f> PnpSolver::reproject_armor(const AimPoint &aim_point, bool islarge) const
+std::vector<cv::Point2f> PnpSolver::reproject_armor(const AimPoint &aim_point, bool is_large) const
 {
     if (!aim_point.valid)
     {
         return {};
     }
-    return reproject_armor(aim_point.xyza.head<3>(), aim_point.xyza[3], islarge);
+    return reproject_armor(aim_point.xyza.head<3>(), aim_point.xyza[3], is_large);
 }
 
 }  // namespace armor_task

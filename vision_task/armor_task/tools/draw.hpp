@@ -1,5 +1,4 @@
-#ifndef DRAW_HPP
-#define DRAW_HPP
+#pragma once
 
 #include "../include/armor.hpp"
 #include "../tasks/pnp_solver.hpp"
@@ -20,12 +19,12 @@ void draw_box(cv::Mat &img, const Armor &armor, const cv::Scalar &color, int thi
 // 传入 Target，重投影其全部装甲板并逐个画倾斜框。
 void draw_box(cv::Mat &img, const Target &target, const armor_task::PnpSolver &pnp_solver, const cv::Scalar &color, int thickness = 2);
 // 传入 AimPoint，重投影后画该瞄准装甲板的倾斜框。
-void draw_box(cv::Mat &img, const AimPoint &aim_point, const armor_task::PnpSolver &pnp_solver, const cv::Scalar &color, int thickness = 2, bool islarge = false);
+void draw_box(cv::Mat &img, const AimPoint &aim_point, const armor_task::PnpSolver &pnp_solver, const cv::Scalar &color, int thickness = 2, bool is_large = false);
 
 // 传入单个像素点，画实心圆点。
 void draw_point(cv::Mat &img, const cv::Point &point, const cv::Scalar &color, int radius = 2);
 // 传入 AimPoint，重投影后画其中心点。
-void draw_point(cv::Mat &img, const AimPoint &aim_point, const armor_task::PnpSolver &pnp_solver, const cv::Scalar &color, int radius = 2, bool islarge = false);
+void draw_point(cv::Mat &img, const AimPoint &aim_point, const armor_task::PnpSolver &pnp_solver, const cv::Scalar &color, int radius = 2, bool is_large = false);
 // 传入整数点集，单点画圆，多点按闭合折线连接绘制。
 void draw_point(cv::Mat &img, const std::vector<cv::Point> &points, const cv::Scalar &color = cv::Scalar(0, 0, 255), int thickness = 2);
 // 传入浮点点集，转换到像素点后按闭合折线绘制。
@@ -41,5 +40,3 @@ void drawTrajectory(cv::Mat &img, const AimPoint &aim_point, double bullet_speed
 // 传入 yaw/pitch，按指定射角画弹道轨迹投影线。
 void drawTrajectory(cv::Mat &img, double yaw_gimbal, double pitch_gimbal, double bullet_speed, const std::string &config_path, const cv::Mat &camera_matrix, const cv::Mat &distort_coeffs);
 }
-
-#endif // DRAW_HPP

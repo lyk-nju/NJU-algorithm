@@ -1,14 +1,13 @@
-#ifndef AUTO_AIM__TRACKER_HPP
-#define AUTO_AIM__TRACKER_HPP
-
-#include <Eigen/Dense>
-#include <chrono>
-#include <list>
-#include <string>
+#pragma once
 
 #include "armor.hpp"
 #include "pnp_solver.hpp"
 #include "target.hpp"
+
+#include <Eigen/Dense>
+#include <chrono>
+#include <string>
+#include <vector>
 
 namespace armor_task
 {
@@ -20,16 +19,12 @@ class Tracker
 
     std::string state() const;
 
-    std::vector<Target> track(std::vector<Armor> &armors, std::chrono::steady_clock::time_point t,bool enemy_is_red);
-
-    bool get_enemy_color(bool iam_red);
-
+    std::vector<Target> track(
+        std::vector<Armor> &armors, std::chrono::steady_clock::time_point t, bool enemy_is_red);
 
   private:
     PnpSolver &solver_;
     Color enemy_color_;
-    bool init_ = false;
-    bool last_self_is_red_;
     int min_detect_count_;
     int max_temp_lost_count_;
     int detect_count_;
@@ -47,5 +42,3 @@ class Tracker
 };
 
 } // namespace armor_task
-
-#endif // AUTO_AIM__TRACKER_HPP

@@ -1,6 +1,4 @@
-
-#ifndef TOOLS__MATH_TOOLS_HPP
-#define TOOLS__MATH_TOOLS_HPP
+#pragma once
 
 #include <Eigen/Geometry>
 #include <chrono>
@@ -55,5 +53,3 @@ T square(T const & a)
 
 double limit_min_max(double input, double min, double max);
 }  // namespace tools
-
-#endif  // TOOLS__MATH_TOOLS_HPP

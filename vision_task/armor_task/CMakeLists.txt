@@ -51,9 +51,9 @@ include_directories(/usr/local/include/cv_bridge)
 include_directories(/home/user/vision_opencv/cv_bridge/include)
 include_directories(/usr/local/cuda/include)
 if(CMAKE_SYSTEM_PROCESSOR MATCHES "aarch64|arm64")
-    set(HIK_SDK_LIB_DIR ${CMAKE_CURRENT_SOURCE_DIR}/io/camera/hik/lib/arm64)
+    set(HIK_SDK_LIB_DIR ${CMAKE_CURRENT_SOURCE_DIR}/io/driver/camera/hik/lib/arm64)
 else()
-    set(HIK_SDK_LIB_DIR ${CMAKE_CURRENT_SOURCE_DIR}/io/camera/hik/lib/amd64)
+    set(HIK_SDK_LIB_DIR ${CMAKE_CURRENT_SOURCE_DIR}/io/driver/camera/hik/lib/amd64)
 endif()
 include_directories(
     ${CMAKE_CURRENT_SOURCE_DIR}/include
@@ -89,7 +89,7 @@ endif()
 set(SOURCES
     tasks/postprocess.cu
     tasks/auto_aim_system.cpp
-    tasks/imu_history.cpp
+    tasks/aim_pipeline.cpp
     tasks/detector.cpp
     tasks/pnp_solver.cpp
     tasks/tracker.cpp
@@ -100,13 +100,20 @@ set(SOURCES
     tasks/trajectory_normal.cpp
     tools/math_tools.cpp  
     tools/draw.cpp
-    tools/pharser.cpp
+    tools/parser.cpp
     tools/visualizer.cpp
+    io/driver/cboard/cboard.cpp
+    io/algorithm/codec.cpp
+    io/driver/camera/camera_base.cpp
+    io/driver/camera/direct_image_source.cpp
+    io/driver/camera/hik/hik.cpp
+    io/driver/ros2/ros2_image_source.cpp
     cuda/yolo_decode.cu
 )
 
 set(VIDEO_TEST_SOURCES
     tasks/postprocess.cu
+    tasks/aim_pipeline.cpp
     tasks/detector.cpp
     tasks/pnp_solver.cpp
     tasks/tracker.cpp
@@ -117,32 +124,37 @@ set(VIDEO_TEST_SOURCES
     tasks/trajectory_normal.cpp
     tools/math_tools.cpp
     tools/draw.cpp
-    tools/pharser.cpp
+    tools/parser.cpp
     tools/visualizer.cpp
     cuda/yolo_decode.cu
 )
 
 set(SOURCES_NO_VISUALIZER
     tasks/auto_aim_system.cpp
-    tasks/imu_history.cpp
+    tasks/aim_pipeline.cpp
     tasks/detector.cpp
     tasks/pnp_solver.cpp
     tasks/tracker.cpp
     tasks/ekf.cpp
     tasks/aimer.cpp
+    tasks/shooter.cpp
     tasks/target.cpp
     tasks/trajectory_normal.cpp
     tools/math_tools.cpp  
     tools/draw.cpp
-    tools/pharser.cpp
-    io/usb/cboard.cpp
-    io/usb/unpack.cpp
+    tools/parser.cpp
+    io/driver/cboard/cboard.cpp
+    io/algorithm/codec.cpp
+    io/driver/camera/camera_base.cpp
+    io/driver/camera/direct_image_source.cpp
+    io/driver/camera/hik/hik.cpp
+    io/driver/ros2/ros2_image_source.cpp
     cuda/yolo_decode.cu
     tasks/postprocess.cu
 )
 
 set(ROS2_SOURCES
-    io/ros2/ros2_manager.cpp
+    io/driver/ros2/ros2_manager.cpp
 )
 
 
@@ -150,8 +162,8 @@ add_executable(video_test test/video/video_test.cpp ${VIDEO_TEST_SOURCES})
  add_executable(auto_aim_test test/deploy/auto_aim/auto_aim.cpp ${SOURCES} ${ROS2_SOURCES})
 add_executable(camera_test
     test/scripts/camera_test.cpp
-    io/camera/camera_base.cpp
-    io/camera/hik/hik.cpp
+    io/driver/camera/camera_base.cpp
+    io/driver/camera/hik/hik.cpp
 )
 
 
@@ -181,6 +193,7 @@ target_link_libraries(camera_test
     cv_bridge::cv_bridge
 )
 
+target_link_directories(auto_aim_test PRIVATE ${HIK_SDK_LIB_DIR})
 target_link_libraries(auto_aim_test 
     ${OpenCV_LIBS} 
     ${EIGEN3_LIBRARIES} 
@@ -194,6 +207,8 @@ target_link_libraries(auto_aim_test
     cudart
     -L/usr/local/cuda/lib64
     serial
+    usb-1.0
+    MvCameraControl
 )
 
 set_target_properties(

@@ -1,4 +1,4 @@
-#include "pharser.hpp"
+#include "parser.hpp"
 #include <iostream>
 #include <fstream>
 #include <sstream>
@@ -152,6 +152,7 @@ TestConfig load_deploy_test_config(const std::string &config_path)
     config.playback_fps = 10;
     config.send_port = "/dev/ttyUSB0";
     config.receive_port = "/dev/ttyUSB1";
+    config.image_source = "ros2";
 
     try
     {
@@ -214,7 +215,12 @@ TestConfig load_deploy_test_config(const std::string &config_path)
                     config.receive_port = configured_port;
                 }
             }
-            
+
+            if (yaml["image_source"])
+            {
+                config.image_source = yaml["image_source"].as<std::string>();
+            }
+
             std::cout << "Loaded deploy test config from: " << config_path << std::endl;
             std::cout << "  YOLO model: " << config.yolo_model_path << std::endl;
             std::cout << "  Video path: " << config.video_path << std::endl;
@@ -223,6 +229,7 @@ TestConfig load_deploy_test_config(const std::string &config_path)
             std::cout << "  Playback FPS: " << config.playback_fps << std::endl;
             std::cout << "  Send port: " << config.send_port << std::endl;
             std::cout << "  Receive port: " << config.receive_port << std::endl;
+            std::cout << "  Image source: " << config.image_source << std::endl;
         }
         else
         {

@@ -1,5 +1,4 @@
-#ifndef ARMOR_TASK__TRAJECTORY_RK4_HPP
-#define ARMOR_TASK__TRAJECTORY_RK4_HPP
+#pragma once
 
 #include <Eigen/Dense>
 
@@ -25,5 +24,3 @@ struct TrajectoryRK4
 };
 
 }  // namespace armor_task
-
-#endif  // ARMOR_TASK__TRAJECTORY_RK4_HPP

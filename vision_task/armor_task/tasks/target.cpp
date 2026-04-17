@@ -33,8 +33,9 @@ Target::Target(const Armor &armor, std::chrono::steady_clock::time_point t, int 
 
 void Target::predict(std::chrono::steady_clock::time_point t)
 {
+    // 时间戳可能因 ROS bag 回放 / 时钟抖动而回退；夹到 0 避免 EKF 反向外推发散
     auto dt = tools::delta_time(t, t_);
-    // std::cout << "dt: " << dt << std::endl;
+    if (dt < 0.0) dt = 0.0;
     predict(dt);
     t_ = t;
 }
@@ -100,7 +101,7 @@ void Target::predict(double dt)
     };
 
     //   // 前哨站转速特判
-    //   if (this->convergened() && this->name == ArmorName::outpost && std::abs(this->ekf_.x[7]) > 2)
+    //   if (this->has_converged() && this->name == ArmorName::outpost && std::abs(this->ekf_.x[7]) > 2)
     //     this->ekf_.x[7] = this->ekf_.x[7] > 0 ? 2.51 : -2.51;
 
     ekf_.predict(F, Q, f);
@@ -108,8 +109,8 @@ void Target::predict(double dt)
 
 void Target::update(const Armor &armor)
 {
-    // 装甲板匹配
-    int id;
+    // 装甲板匹配：默认落到 id=0，避免角度比较全部不成立时读到未初始化值
+    int id = 0;
     auto min_angle_error = 1e10;
     const std::vector<Eigen::Vector4d> &xyza_list = armor_xyza_list();
 
@@ -231,7 +232,7 @@ bool Target::diverged() const
     return true;
 }
 
-bool Target::convergened()
+bool Target::has_converged()
 {
     //   if (this->name != ArmorName::outpost && update_count_ > 3 && !this->diverged()) {
     //     is_converged_ = true;

@@ -1,7 +1,6 @@
-#ifndef AUTO_AIM__SHOOTER_HPP
-#define AUTO_AIM__SHOOTER_HPP
+#pragma once
 
-#include "../io/dataframe/struct.hpp"
+#include "../io/structs/structs.hpp"
 #include <Eigen/Dense>
 #include <list>
 #include <string>
@@ -29,5 +28,3 @@ private:
   double second_tolerance_;
 };
 }  // namespace armor_task
-
-#endif  // AUTO_AIM__SHOOTER_HPP

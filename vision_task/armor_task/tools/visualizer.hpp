@@ -1,5 +1,4 @@
-#ifndef VISUALIZER_HPP
-#define VISUALIZER_HPP
+#pragma once
 
 #include "../include/armor.hpp"
 #include "../tasks/target.hpp"
@@ -124,5 +123,3 @@ private:
 };
 
 } // namespace armor_task
-
-#endif // VISUALIZER_HPP

@@ -6,3 +6,8 @@ baudrate: 115200
 yolo_model_path: /home/nvidia/NJU-algorithm/vision_task/armor_task/models/new.engine
 video_path : /home/nvidia/NJU-algorithm/vision_task/armor_task/assets/circular.avi
 config_path : /home/nvidia/NJU-algorithm/vision_task/armor_task/config/camera1.yaml
+
+# 图像输入模式：
+#   ros2   - 订阅 /image_raw 话题（由外部相机节点发布）
+#   camera - 本进程直接通过 USB 打开相机（io::Camera / Hik）
+image_source: ros2

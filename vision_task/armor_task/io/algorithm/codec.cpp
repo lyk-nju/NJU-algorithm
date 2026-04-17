@@ -1,13 +1,12 @@
-#include "unpack.hpp"
+#include "codec.hpp"
 
 #include <cstdio>
 #include <iomanip>
 #include <sstream>
 
-namespace io
+namespace io::codec
 {
-namespace unpack
-{
+
 PlayerMode decode_mode(int mode_value)
 {
     switch (mode_value)
@@ -47,28 +46,15 @@ bool decode(const std::string &line, Cboard2Vision &out)
     const int count = std::sscanf(
         line.c_str(),
         "%d,%lf,%lf,%lf,%lf,%lf,%lf,%d,%d,%d,%lf",
-        &mode,
-        &w,
-        &x,
-        &y,
-        &z,
-        &yaw,
-        &pitch,
-        &game_time,
-        &self_hp,
-        &self_id,
-        &bullet_speed);
+        &mode, &w, &x, &y, &z, &yaw, &pitch,
+        &game_time, &self_hp, &self_id, &bullet_speed);
 
-    // sscanf 期望解析 11 个字段
-    if (count < 11)
-    {
-        return false;
-    }
+    if (count < 11) return false;
 
     out.mode_ = decode_mode(mode);
     out.gimbal_data_ = GimbalData{w, x, y, z, static_cast<float>(yaw), static_cast<float>(pitch)};
     out.judge_ = JudgerData{game_time, self_hp, self_id, bullet_speed};
     return true;
 }
-} // namespace unpack
-} // namespace io
+
+} // namespace io::codec

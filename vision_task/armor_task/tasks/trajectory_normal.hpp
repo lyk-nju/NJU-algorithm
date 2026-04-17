@@ -1,5 +1,4 @@
-#ifndef ARMOR_TASK__TRAJECTORY_HPP
-#define ARMOR_TASK__TRAJECTORY_HPP
+#pragma once
 
 namespace armor_task
 {
@@ -17,5 +16,3 @@ struct Trajectory
 };
 
 }  // namespace armor_task
-
-#endif  // ARMOR_TASK__TRAJECTORY_HPP

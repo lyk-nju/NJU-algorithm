@@ -1,7 +1,7 @@
 #include "draw.hpp"
 
 #include "../tasks/trajectory_normal.hpp"
-#include "pharser.hpp"
+#include "parser.hpp"
 
 #include <algorithm>
 #include <cmath>
@@ -52,9 +52,9 @@ void draw_box(cv::Mat &img, const Target &target, const armor_task::PnpSolver &p
 }
 
 // 传入 AimPoint，重投影后画该瞄准装甲板的倾斜框。
-void draw_box(cv::Mat &img, const AimPoint &aim_point, const armor_task::PnpSolver &pnp_solver, const cv::Scalar &color, int thickness, bool islarge)
+void draw_box(cv::Mat &img, const AimPoint &aim_point, const armor_task::PnpSolver &pnp_solver, const cv::Scalar &color, int thickness, bool is_large)
 {
-    const auto corners = pnp_solver.reproject_armor(aim_point, islarge);
+    const auto corners = pnp_solver.reproject_armor(aim_point, is_large);
     if (corners.size() < 4)
     {
         return;
@@ -69,9 +69,9 @@ void draw_point(cv::Mat &img, const cv::Point &point, const cv::Scalar &color, i
 }
 
 // 传入 AimPoint，重投影后画其中心点。
-void draw_point(cv::Mat &img, const AimPoint &aim_point, const armor_task::PnpSolver &pnp_solver, const cv::Scalar &color, int radius, bool islarge)
+void draw_point(cv::Mat &img, const AimPoint &aim_point, const armor_task::PnpSolver &pnp_solver, const cv::Scalar &color, int radius, bool is_large)
 {
-    const auto corners = pnp_solver.reproject_armor(aim_point, islarge);
+    const auto corners = pnp_solver.reproject_armor(aim_point, is_large);
     if (corners.empty())
     {
         return;

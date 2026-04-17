@@ -1,5 +1,4 @@
-#ifndef TOOLS__EXTENDED_KALMAN_FILTER_HPP
-#define TOOLS__EXTENDED_KALMAN_FILTER_HPP
+#pragma once
 
 #include <Eigen/Dense>
 #include <deque>
@@ -54,5 +53,3 @@ private:
 };
 
 }  // namespace armor_task
-
-#endif  // TOOLS__EXTENDED_KALMAN_FILTER_HPP

@@ -1,5 +1,4 @@
-#ifndef PHARSER_HPP
-#define PHARSER_HPP
+#pragma once
 
 #include <opencv2/opencv.hpp>
 #include <string>
@@ -31,6 +30,7 @@ struct TestConfig
     int playback_fps;
     std::string send_port;
     std::string receive_port;
+    std::string image_source;  // "ros2" 或 "camera"，仅 deploy 测试使用
 };
 
 /**
@@ -46,5 +46,3 @@ TestConfig load_deploy_test_config(const std::string &config_path = "../config/d
  * @return TestConfig 结构体（不包含串口端口）
  */
 TestConfig load_video_test_config(const std::string &config_path = "../config/video_test.yaml");
-
-#endif // PHARSER_HPP
