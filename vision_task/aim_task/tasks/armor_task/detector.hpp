@@ -16,8 +16,8 @@
 namespace armor_task
 {
 void launch_preprocess_kernel(
-    const uint8_t *src, int src_w, int src_h, int src_step, // 输入：原始图�?
-    float *dst, int dst_w, int dst_h,                       // 输出：模型输�?buffer
+    const uint8_t *src, int src_w, int src_h, int src_step, // 输入：原始图??
+    float *dst, int dst_w, int dst_h,                       // 输出：模型输??buffer
     cudaStream_t stream);
 
 class Logger : public nvinfer1::ILogger
@@ -32,7 +32,7 @@ public:
 class Detector
 {
   public:
-    // 默认加载 video_test 使用�?TensorRT 引擎
+    // 默认加载 video_test 使用??TensorRT 引擎
     Detector();
 
     explicit Detector(const std::string &yolo_model_path);
@@ -52,16 +52,16 @@ class Detector
     // 模块一：预处理（letterbox + 归一化）
     cv::Mat preprocess(const cv::Mat &input_image, int target_width, int target_height);
 
-    // 模块二：推理 + 后处理，返回装甲板列�?
+    // 模块二：推理 + 后处理，返回装甲板列??
     ArmorArray search_armors(const cv::Mat &frame, const cv::Mat &input_blob);
 
-    // �?4 个角点提取左右灯�?
+    // ??4 个角点提取左右灯??
     std::pair<LightBar, LightBar> extract_lightbars_from_corners(const std::vector<cv::Point2f> &corners);
 
-    // 根据类别 ID 推断装甲板颜�?
+    // 根据类别 ID 推断装甲板颜??
     Color get_armor_color(int class_id);
 
-    cv::dnn::Net yolo_net_; // YOLO 检测网络（OpenCV DNN 路径使用�?
+    cv::dnn::Net yolo_net_; // YOLO 检测网络（OpenCV DNN 路径使用??
 
     // 模型参数
     int input_width_;
@@ -69,10 +69,10 @@ class Detector
     float confidence_threshold_;
     float nms_threshold_;
 
-    // letterbox 预处理参数（与训练时�?zero-padding 对齐�?
+    // letterbox 预处理参数（与训练时??zero-padding 对齐??
     float scale_; // 缩放比例
-    float pad_x_; // �?640x640 上的 x 方向 padding
-    float pad_y_; // �?640x640 上的 y 方向 padding
+    float pad_x_; // ??640x640 上的 x 方向 padding
+    float pad_y_; // ??640x640 上的 y 方向 padding
 
     std::vector<std::string> class_names_;
 

@@ -141,7 +141,7 @@ bool Tracker::set_target(std::vector<Armor> &armors, std::chrono::steady_clock::
     auto &armor = armors.front();
     solver_.solve_pnp(armor);
 
-    // 初始协方差对角线：位�?/ 速度 / yaw / 角速度 / r / dl / dh
+    // 初始协方差对角线：位??/ 速度 / yaw / 角速度 / r / dl / dh
     Eigen::VectorXd P0_dig(11);
     P0_dig << 10, 64, 10, 64, 10, 64, 0.4, 100, 0.1, 0.1, 0.1;
     target_ = Target(armor, t, 4, P0_dig);

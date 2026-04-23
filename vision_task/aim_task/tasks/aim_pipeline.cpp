@@ -17,17 +17,17 @@ AimPipeline::AimPipeline(const std::string &yolo_model_path, const std::string &
 {
 }
 
-AimDecision AimPipeline::step(const FrameBundle &bundle, const GameState &gs)
+io::Vision2Cboard AimPipeline::step(const FrameBundle &bundle, const GameState &gs)
 {
     return step_impl(bundle, gs, nullptr);
 }
 
-AimDecision AimPipeline::step(const FrameBundle &bundle, const GameState &gs, DebugSnapshot &debug)
+io::Vision2Cboard AimPipeline::step(const FrameBundle &bundle, const GameState &gs, DebugSnapshot &debug)
 {
     return step_impl(bundle, gs, &debug);
 }
 
-AimDecision AimPipeline::step_impl(const FrameBundle &b, const GameState &gs, DebugSnapshot *debug)
+io::Vision2Cboard AimPipeline::step_impl(const FrameBundle &b, const GameState &gs, DebugSnapshot *debug)
 {
     // (1) 注入当前相机参数 + 云台姿态。
     //     - bundle.camera 必须非空（契约由上层 AutoAimSystem / FrameScheduler 保证）；
@@ -44,7 +44,7 @@ AimDecision AimPipeline::step_impl(const FrameBundle &b, const GameState &gs, De
     // (3) 追踪（Tracker 内部会自行调用 solve_pnp）
     std::vector<Target> targets = tracker_.track(armors, b.frame.timestamp, gs.enemy_is_red);
 
-    AimDecision decision{};
+    io::Vision2Cboard decision{};
 
     if (targets.empty())
     {
@@ -60,12 +60,12 @@ AimDecision AimPipeline::step_impl(const FrameBundle &b, const GameState &gs, De
     // (4) 瞄准。保持原有 std::list 传参语义（Aimer::aim 只用 front()，但改接口
     //     会动算法边界，违反 Step A 硬约束，留给 Step B）。
     std::list<Target> target_list(targets.begin(), targets.end());
-    decision.cmd = aimer_.aim(target_list, b.frame.timestamp, gs.bullet_speed);
+    decision= aimer_.aim(target_list, b.frame.timestamp, gs.bullet_speed);
 
     // (5) 开火判断
     const Eigen::Vector3d gimbal_ypr = tools::eulers(pnp_solver_.R_gimbal2world_, 2, 1, 0);
-    decision.cmd.gimbal_cmd_.shoot = shooter_.shoot(decision.cmd, aimer_, targets, gimbal_ypr);
-    decision.valid_target = decision.cmd.gimbal_cmd_.valid;
+    decision.gimbal_cmd_.shoot = shooter_.shoot(decision.cmd, aimer_, targets, gimbal_ypr);
+   
 
     if (debug)
     {

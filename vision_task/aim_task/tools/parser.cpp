@@ -4,49 +4,42 @@
 #include <sstream>
 #include <vector>
 #include <sys/stat.h>
-#include <fcntl.h>
-#include <glob.h>
-#include <unistd.h>
+#include <algorithm>
 #include <yaml-cpp/yaml.h>
+#include <serial/serial.h>
 
 // 自动检测可用的 ttyACM* 串口设备
 std::string detect_serial_port()
 {
-    glob_t glob_result;
-    int ret = glob("/dev/ttyACM*", 0, nullptr, &glob_result);
-    
-    if (ret != 0)
+    const auto ports = serial::list_ports();
+    if (ports.empty())
     {
-        // ttyACM* 没找到，尝试 ttyUSB*
-        ret = glob("/dev/ttyUSB*", 0, nullptr, &glob_result);
-        if (ret != 0)
-        {
-            globfree(&glob_result);
-            std::cerr << "Warning: No serial port (ttyACM*/ttyUSB*) found" << std::endl;
-            return "";
-        }
+        std::cerr << "Warning: No serial port found" << std::endl;
+        return "";
     }
-    
-    // 遍历找到的第一个可打开的设备
-    for (size_t i = 0; i < glob_result.gl_pathc; i++)
+
+    auto pick_port = [&](const std::string &keyword) -> std::string
     {
-        const char* device = glob_result.gl_pathv[i];
-        int fd = open(device, O_RDWR | O_NOCTTY | O_NONBLOCK);
-        if (fd >= 0)
-        {
-            close(fd);
-            std::cout << "Auto-detected serial port: " << device << std::endl;
-            globfree(&glob_result);
-            return std::string(device);
-        }
+        auto it = std::find_if(ports.begin(), ports.end(), [&](const serial::PortInfo &info)
+                               { return info.port.find(keyword) != std::string::npos; });
+        return it == ports.end() ? "" : it->port;
+    };
+
+    std::string selected_port = pick_port("ttyACM");
+    if (selected_port.empty())
+    {
+        selected_port = pick_port("ttyUSB");
     }
-    
-    globfree(&glob_result);
-    std::cerr << "Warning: Found serial ports but none are accessible" << std::endl;
-    return "";
+    if (selected_port.empty())
+    {
+        selected_port = ports.front().port;
+    }
+
+    std::cout << "Auto-detected serial port: " << selected_port << std::endl;
+    return selected_port;
 }
 
-// 检查端口是否需要自动检测（为空或包含 "*"）
+// 检查端口是否需要自动检测（为空或包?"*"?
 bool needs_auto_detect(const std::string& port)
 {
     return port.empty() || port == "*" || 
@@ -56,8 +49,8 @@ bool needs_auto_detect(const std::string& port)
 
 std::pair<std::string, std::string> load_ports_from_config(const std::string &config_path)
 {
-    std::string send_port = "/dev/ttyUSB0";
-    std::string receive_port = "/dev/ttyUSB1";
+    std::string send_port = "/dev/ttyACM0";
+    std::string receive_port = "/dev/ttyACM0";
 
     try
     {
@@ -139,19 +132,19 @@ std::pair<cv::Mat, cv::Mat> loadCameraParameters(const std::string &config_path)
     return std::make_pair(camera_matrix, distort_coeffs);
 }
 
-// 从配置文件加载 deploy 测试配置
+// 从配置文件加载deploy 测试配置
 TestConfig load_deploy_test_config(const std::string &config_path)
 {
     TestConfig config;
     
-    // 设置默认值
-    config.yolo_model_path = "../models/yolov8_armor.onnx";
+    // 设置默认
+    config.yolo_model_path = "../models/best.onnx";
     config.video_path = "";
     config.config_path = "../config/demo.yaml";
     config.bullet_speed = 24.0;
     config.playback_fps = 10;
-    config.send_port = "/dev/ttyUSB0";
-    config.receive_port = "/dev/ttyUSB1";
+    config.send_port = "/dev/ttyACM0";
+    config.receive_port = "/dev/ttyACM1";
     config.image_source = "ros2";
 
     try
@@ -244,18 +237,18 @@ TestConfig load_deploy_test_config(const std::string &config_path)
     return config;
 }
 
-// 从配置文件加载 video 测试配置
+// 从配置文件加载video 测试配置
 TestConfig load_video_test_config(const std::string &config_path)
 {
     TestConfig config;
     
-    // 设置默认值
+    // 设置默认?
     config.yolo_model_path = "../models/best.engine";
     config.video_path = "../assets/circular.avi";
     config.config_path = "../config/demo.yaml";
     config.bullet_speed = 24.0;
     config.playback_fps = 10;
-    config.send_port = "";  // video 测试不需要串口
+    config.send_port = "";  // video 测试不需要串?
     config.receive_port = "";
 
     try

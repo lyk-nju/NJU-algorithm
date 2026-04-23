@@ -183,6 +183,7 @@ target_link_libraries(video_test
     nvinfer
     cudart
     -L/usr/local/cuda/lib64
+    serial
 )
 
 

@@ -119,7 +119,7 @@ int main(int argc, char *argv[])
             bundle.gimbal_quat = Eigen::Quaterniond::Identity(); // video_test 无 IMU
 
             const auto step_begin = std::chrono::steady_clock::now();
-            AimDecision decision = pipeline.step(bundle, game_state, dbg);
+            io::Vision2Cboard decision = pipeline.step(bundle, game_state, dbg);
             const auto step_end = std::chrono::steady_clock::now();
             const double step_ms = std::chrono::duration<double, std::milli>(step_end - step_begin).count();
 
